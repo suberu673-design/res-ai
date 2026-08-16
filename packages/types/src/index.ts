@@ -190,6 +190,51 @@ export interface AIEvent {
   createdAt: Date;
 }
 
+export enum MarketTimeframe {
+  ONE_MINUTE = '1m',
+  FIVE_MINUTES = '5m',
+  FIFTEEN_MINUTES = '15m',
+  THIRTY_MINUTES = '30m',
+  ONE_HOUR = '1h',
+  FOUR_HOURS = '4h',
+  ONE_DAY = '1d',
+}
+
+export interface MarketPairDefinition {
+  symbol: string;
+  baseCurrency: string;
+  quoteCurrency: string;
+}
+
+export interface MarketQuote {
+  symbol: string;
+  bid: number;
+  ask: number;
+  spread: number;
+  timestamp: Date;
+  source: string;
+}
+
+export interface MarketCandle {
+  symbol: string;
+  timeframe: MarketTimeframe;
+  timestamp: Date;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number | null;
+  source: string;
+}
+
+export interface MarketDataStatus {
+  provider: string;
+  mode: 'LIVE' | 'MOCK';
+  connected: boolean;
+  lastSuccessfulUpdate?: Date;
+  lastError?: string;
+}
+
 /**
  * API Error Response
  */

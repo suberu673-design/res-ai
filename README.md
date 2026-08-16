@@ -15,9 +15,9 @@ The AI Forex Platform is designed to:
 - **Backtest** strategies on historical data
 - **Learn** through controlled strategy evolution
 
-Currently in **D0 (Foundation Release)** — establishing the project foundation with clean architecture and scalable infrastructure.
+Currently in **M2 (Market Data Foundation)** — establishing a provider-based market-data layer, forex market endpoints, and a safe mock/live provider model without building the trading engine.
 
-## 📦 Current Milestone: D0 — Project Foundation
+## 📦 Current Milestone: M2 — Market Data Foundation
 
 ### Current Capabilities
 
@@ -25,14 +25,24 @@ Currently in **D0 (Foundation Release)** — establishing the project foundation
 - ✅ Shared TypeScript types package with trading domain enums
 - ✅ PostgreSQL database with Prisma ORM
 - ✅ Minimal Express.js API with health checks
-- ✅ Next.js web application shell
+- ✅ Responsive dark-first dashboard shell and navigation
+- ✅ Demo AI opportunity, activity, and positions views
+- ✅ Backend connectivity check for the health endpoint
 - ✅ Docker Compose for development database
 - ✅ Comprehensive development documentation
 
-### Coming Soon
+### Current M2 Capabilities
 
-- M1 — Web Application Shell (complete dashboard UI)
-- M2 — Market Data Integration
+- ✅ Provider-based abstractions for market data access
+- ✅ Shared market-data types for pairs, quotes, candles, and timeframes
+- ✅ Mock market-data provider for local safe development
+- ✅ Market-data endpoints in the API
+- ✅ Provider status signal in the web shell
+- ✅ Database schema support for candle storage
+- ✅ Documentation for the market-data layer
+
+### Upcoming Milestones
+
 - M3 — Trading Engine
 - M4 — AI Services
 - M5 — Risk Management
@@ -98,7 +108,7 @@ Currently in **D0 (Foundation Release)** — establishing the project foundation
    npm install
    ```
 
-4. **Start the database**:
+4. **Start the database** (required for the API health check to pass):
    ```bash
    npm run db:up
    ```
@@ -122,6 +132,20 @@ Currently in **D0 (Foundation Release)** — establishing the project foundation
    - Web: http://localhost:3000
    - API: http://localhost:3001
    - API Health: http://localhost:3001/health
+
+### GitHub Codespaces
+
+When working in Codespaces, start the app with the same commands above in separate terminal sessions:
+
+```bash
+cd /workspaces/aitrade/ai-forex-platform-
+npm install
+npm run db:up
+cd services/api && npm run dev
+cd apps/web && npm run dev
+```
+
+The web UI is served on port 3000 and the API on port 3001.
 
 ## 📋 Development Commands
 

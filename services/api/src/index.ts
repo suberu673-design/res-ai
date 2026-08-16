@@ -1,61 +1,110 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
-import { HealthStatus, VersionInfo, Environment } from '@forex-platform/types';
+import { HealthStatus, VersionInfo, Environment, MarketTimeframe } from '@forex-platform/types';
+import { createMarketDataProvider, MarketDataService } from '@forex-platform/market-data';
+import { z } from 'zod';
 
 const app: Express = express();
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  log: ['error'],
+});
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Configuration
-const PORT = process.env.API_PORT || 3001;
+const PORT = Number(process.env.API_PORT || 3001);
+const HOST = process.env.API_HOST || '0.0.0.0';
 const API_VERSION = '0.1.0';
 const APP_ENV = (process.env.APP_ENV || 'development') as Environment;
-
-// Routes
-
-/**
- * Health check endpoint
- * Returns the health status of the service and database
- */
-app.get('/health', async (req: Request, res: Response) => {
-  try {
-    const startTime = Date.now();
-
-    // Check database connection
-    await prisma.$queryRaw`SELECT 1`;
-
-    const latency = Date.now() - startTime;
-
-    const health: HealthStatus = {
-      status: 'healthy',
-      timestamp: new Date(),
-      database: {
-        status: 'connected',
-        latency,
-      },
-    };
-
-    res.json(health);
-  } catch (error) {
-    const health: HealthStatus = {
-      status: 'unhealthy',
-      timestamp: new Date(),
-      database: {
-        status: 'disconnected',
-      },
-    };
-
-    res.status(503).json(health);
-  }
+const providerMode = (process.env.MARKET_DATA_MODE || process.env.MARKET_DATA_PROVIDER || 'mock').toUpperCase();
+const marketDataService = new MarketDataService({
+  provider: createMarketDataProvider(providerMode === 'LIVE' ? 'LIVE' : 'MOCK', process.env.MARKET_DATA_API_KEY),
+  defaultTimeframe: MarketTimeframe.FIFTEEN_MINUTES,
 });
 
-/**
- * API version endpoint
- */
+type CandleWrite = {
+  symbol: string;
+  timeframe: string;
+  timestamp: Date;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  source: string;
+  volume?: number | null;
+};
+
+async function persistCandles(candles: CandleWrite[]) {
+  if (!candles.length) return;
+
+  for (const candle of candles) {
+    await prisma.marketCandle.upsert({
+      where: {
+        symbol_timeframe_timestamp: {
+          symbol: candle.symbol,
+          timeframe: candle.timeframe,
+          timestamp: candle.timestamp,
+        },
+      },
+      update: {
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume ?? null,
+        source: candle.source,
+      },
+      create: {
+        symbol: candle.symbol,
+        timeframe: candle.timeframe,
+        timestamp: candle.timestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume ?? null,
+        source: candle.source,
+      },
+    });
+  }
+}
+
+const symbolParamSchema = z.string().trim().min(1);
+const timeframeSchema = z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d']);
+const limitSchema = z.coerce.number().int().min(1).max(500).default(200);
+
+async function checkDatabaseHealth(): Promise<{ connected: boolean; latency?: number }> {
+  try {
+    const startTime = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      connected: true,
+      latency: Date.now() - startTime,
+    };
+  } catch (error) {
+    return { connected: false };
+  }
+}
+
+app.get('/health', async (req: Request, res: Response) => {
+  const database = await checkDatabaseHealth();
+  const health: HealthStatus = {
+    status: database.connected ? 'healthy' : 'degraded',
+    timestamp: new Date(),
+    database: {
+      status: database.connected ? 'connected' : 'disconnected',
+      ...(database.latency !== undefined ? { latency: database.latency } : {}),
+    },
+  };
+
+  if (!database.connected) {
+    return res.status(503).json(health);
+  }
+
+  return res.json(health);
+});
+
 app.get('/api/version', (req: Request, res: Response) => {
   const version: VersionInfo = {
     version: API_VERSION,
@@ -66,9 +115,86 @@ app.get('/api/version', (req: Request, res: Response) => {
   res.json(version);
 });
 
-/**
- * Root endpoint
- */
+app.get('/api/market/status', async (req: Request, res: Response) => {
+  const status = {
+    provider: marketDataService.getProviderName(),
+    mode: marketDataService.getProviderMode(),
+    connected: true,
+    lastSuccessfulUpdate: new Date(),
+  };
+
+  res.json(status);
+});
+
+app.get('/api/market/pairs', async (req: Request, res: Response) => {
+  const pairs = await marketDataService.getSupportedPairs();
+  res.json({
+    provider: marketDataService.getProviderName(),
+    mode: marketDataService.getProviderMode(),
+    count: pairs.length,
+    pairs,
+  });
+});
+
+app.get('/api/market/quote/:symbol', async (req: Request, res: Response) => {
+  try {
+    const symbol = symbolParamSchema.parse(req.params.symbol);
+    const quote = await marketDataService.getQuote(symbol);
+    res.json(quote);
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_SYMBOL',
+        message: 'A valid FX symbol is required.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/market/candles/:symbol', async (req: Request, res: Response) => {
+  try {
+    const symbol = symbolParamSchema.parse(req.params.symbol);
+    const timeframe = timeframeSchema.parse(req.query.timeframe ?? '15m');
+    const limit = limitSchema.parse(req.query.limit ?? 200);
+    const timeframeEnum = timeframe as MarketTimeframe;
+
+    const candles = await marketDataService.getHistoricalCandles(symbol, timeframeEnum, limit);
+    try {
+      const writes: CandleWrite[] = candles.map((candle) => ({
+        symbol: candle.symbol,
+        timeframe: candle.timeframe,
+        timestamp: candle.timestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        source: candle.source,
+        volume: candle.volume ?? null,
+      }));
+
+      await persistCandles(writes);
+    } catch (error) {
+      console.warn('Failed to persist market candles:', error);
+    }
+
+    res.json({
+      symbol: marketDataService.normalizeSymbolForDisplay(symbol),
+      timeframe,
+      count: candles.length,
+      candles,
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_REQUEST',
+        message: 'Symbol, timeframe, and limit parameters are invalid.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'AI Forex Platform API',
@@ -76,15 +202,16 @@ app.get('/', (req: Request, res: Response) => {
     endpoints: {
       health: '/health',
       version: '/api/version',
+      marketStatus: '/api/market/status',
+      marketPairs: '/api/market/pairs',
+      marketQuote: '/api/market/quote/:symbol',
+      marketCandles: '/api/market/candles/:symbol',
     },
   });
 });
 
-/**
- * Error handling middleware
- */
-app.use((err: any, req: Request, res: Response) => {
-  console.error(err);
+app.use((err: unknown, req: Request, res: Response) => {
+  console.error('Unhandled API error:', err);
   res.status(500).json({
     error: {
       code: 'INTERNAL_ERROR',
@@ -94,9 +221,6 @@ app.use((err: any, req: Request, res: Response) => {
   });
 });
 
-/**
- * 404 handler
- */
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: {
@@ -107,25 +231,25 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Start server
 async function start() {
-  try {
-    // Test database connection
-    await prisma.$queryRaw`SELECT 1`;
-    console.log('✓ Database connection successful');
+  console.log('API starting...');
+  console.log(`Environment: ${APP_ENV}`);
+  console.log(`Port: ${PORT}`);
 
-    app.listen(PORT, () => {
-      console.log(`✓ API server running on http://localhost:${PORT}`);
-      console.log(`✓ Environment: ${APP_ENV}`);
-      console.log(`✓ API Version: ${API_VERSION}`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+  const database = await checkDatabaseHealth();
+  if (database.connected) {
+    console.log('Database: connected');
+  } else {
+    console.log('Database: unavailable');
   }
+
+  console.log(`Market data provider: ${marketDataService.getProviderName()} (${marketDataService.getProviderMode()})`);
+
+  app.listen(PORT, HOST, () => {
+    console.log(`API ready on http://${HOST}:${PORT}`);
+  });
 }
 
-// Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
   await prisma.$disconnect();

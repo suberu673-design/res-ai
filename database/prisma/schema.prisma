@@ -52,6 +52,8 @@ model MarketPair {
   baseCurrency    String
   quoteCurrency   String
   description     String   @default("")
+  source          String   @default("system")
+  isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -60,6 +62,25 @@ model MarketPair {
   orders    Order[]
 
   @@map("market_pairs")
+}
+
+model MarketCandle {
+  id        String    @id @default(cuid())
+  symbol    String
+  timeframe String
+  timestamp DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float?
+  source    String    @default("mock")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([symbol, timeframe, timestamp])
+  @@index([symbol, timeframe, timestamp])
+  @@map("market_candles")
 }
 
 // Strategy - trading strategies
