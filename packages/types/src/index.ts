@@ -744,3 +744,64 @@ export interface ErrorResponse {
   };
   timestamp: Date;
 }
+
+/**
+ * AI Assessment - how the analyst views the setup
+ */
+export enum AIAssessment {
+  FAVORABLE = 'FAVORABLE',
+  CAUTIOUS = 'CAUTIOUS',
+  UNFAVORABLE = 'UNFAVORABLE',
+  NEUTRAL = 'NEUTRAL',
+}
+
+/**
+ * AI Analysis Context - structured input for the AI analyst
+ */
+export interface AIAnalysisContext {
+  symbol: string;
+  tradingMode: TradingMode;
+  timeframe: string;
+  currentPrice: number | null;
+  marketState: Partial<MarketState> | null;
+  opportunity: {
+    direction: string;
+    score: number;
+    confidence: number;
+    reasons: string[];
+    riskFlags: string[];
+  };
+  marketDataSource: string;
+  marketDataMode: 'LIVE' | 'MOCK';
+}
+
+/**
+ * AI Analysis - structured output from the AI analyst
+ */
+export interface AIAnalysis {
+  id: string;
+  symbol: string;
+  tradingMode: TradingMode;
+  timeframe: string;
+  direction: TradeDirection;
+  assessment: AIAssessment;
+  confidence: number;
+  summary: string;
+  reasons: string[];
+  risks: string[];
+  invalidationConditions: string[];
+  suggestedObservation: string | null;
+  analyzedAt: Date;
+  model: string;
+  provider: string;
+  marketDataMode: 'LIVE' | 'MOCK';
+  opportunityScore: number | null;
+}
+
+/**
+ * AI Analysis validation error
+ */
+export interface AIAnalysisValidationError {
+  field: string;
+  message: string;
+}

@@ -11,6 +11,7 @@ import {
   getTradingModeConfiguration,
   normalizeTradingMode,
   type MarketState,
+  type AIAnalysisContext,
 } from '@forex-platform/types';
 import {
   createMarketDataProvider,
@@ -21,6 +22,7 @@ import {
   buildOpportunityFromMarketState,
   scanOpportunitySet,
 } from '@forex-platform/opportunity-engine';
+import { AIAnalystService } from '@forex-platform/ai-analyst';
 import { z } from 'zod';
 
 const app: Express = express();
@@ -48,6 +50,7 @@ const marketDataService = new MarketDataService({
   defaultTimeframe: MarketTimeframe.FIFTEEN_MINUTES,
 });
 const marketIntelligenceService = new MarketIntelligenceService();
+const aiAnalystService = new AIAnalystService();
 
 type CandleWrite = {
   symbol: string;
@@ -370,9 +373,23 @@ app.get('/api/opportunities', async (req: Request, res: Response) => {
   try {
     const mode = tradingModeSchema.parse(req.query.mode ?? TradingMode.SWING);
     const timeframe = contextTimeframeSchema.parse(req.query.timeframe ?? '4h');
-    const limit = z.coerce.number().int().min(1).max(10).default(5).parse(req.query.limit ?? 5);
+    const limit = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(5)
+      .parse(req.query.limit ?? 5);
     const timeframeEnum = timeframe as MarketTimeframe;
-    const symbols = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'EURGBP', 'GBPJPY', 'NZDUSD'];
+    const symbols = [
+      'EURUSD',
+      'GBPUSD',
+      'USDJPY',
+      'AUDUSD',
+      'EURGBP',
+      'GBPJPY',
+      'NZDUSD',
+    ];
 
     const opportunities = await Promise.all(
       symbols.map(async (symbol) => {
@@ -458,7 +475,8 @@ app.get('/api/opportunities/:symbol', async (req: Request, res: Response) => {
     res.status(400).json({
       error: {
         code: 'INVALID_SYMBOL_OPPORTUNITY',
-        message: 'The requested symbol could not be analyzed for opportunities.',
+        message:
+          'The requested symbol could not be analyzed for opportunities.',
       },
       timestamp: new Date(),
     });
@@ -469,9 +487,22 @@ app.get('/api/scanner', async (req: Request, res: Response) => {
   try {
     const mode = tradingModeSchema.parse(req.query.mode ?? TradingMode.SWING);
     const timeframe = contextTimeframeSchema.parse(req.query.timeframe ?? '4h');
-    const limit = z.coerce.number().int().min(1).max(10).default(5).parse(req.query.limit ?? 5);
+    const limit = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(5)
+      .parse(req.query.limit ?? 5);
     const timeframeEnum = timeframe as MarketTimeframe;
-    const symbols = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'EURGBP', 'GBPJPY'];
+    const symbols = [
+      'EURUSD',
+      'GBPUSD',
+      'USDJPY',
+      'AUDUSD',
+      'EURGBP',
+      'GBPJPY',
+    ];
 
     const candidates = await Promise.all(
       symbols.map(async (symbol) => {
@@ -553,6 +584,135 @@ app.use((err: unknown, req: Request, res: Response) => {
       code: 'INTERNAL_ERROR',
       message: 'Internal server error',
     },
+    timestamp: new Date(),
+  });
+});
+
+// AI Analysis endpoints
+app.post('/api/ai/analysis', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        symbol: z.string().trim().min(1),
+        mode: z
+          .string()
+          .default(TradingMode.SWING)
+          .transform((value) => {
+            const mode = normalizeTradingMode(value);
+            if (!mode) throw new Error('INVALID_TRADING_MODE');
+            return mode;
+          }),
+        timeframe: z.string().default('1h'),
+      })
+      .parse(req.body);
+
+    const symbol = body.symbol.toUpperCase();
+    const mode = body.mode;
+    const timeframe = body.timeframe as MarketTimeframe;
+
+    // Fetch market data and analyze
+    let marketState: Partial<MarketState> | null = null;
+    let currentPrice: number | null = null;
+
+    try {
+      const candles = await marketDataService.getHistoricalCandles(
+        symbol,
+        timeframe,
+        220
+      );
+
+      if (candles.length > 0) {
+        currentPrice = candles.at(-1)?.close ?? null;
+
+        const analysis = marketIntelligenceService.analyzePair({
+          symbol,
+          timeframe,
+          candles,
+          source: marketDataService.getProviderName(),
+          dataStatus: candles.length >= 50 ? 'ok' : 'insufficient_data',
+          quote: currentPrice,
+        });
+        marketState = analysis;
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch market data for ${symbol}:`, error);
+      marketState = null;
+    }
+
+    // Build opportunity from market state
+    const opportunity = buildOpportunityFromMarketState(
+      marketState ?? {},
+      mode
+    );
+
+    // Create AI analysis context
+    const context: AIAnalysisContext = {
+      symbol,
+      tradingMode: mode,
+      timeframe,
+      currentPrice,
+      marketState,
+      opportunity: {
+        direction: opportunity.direction,
+        score: opportunity.score,
+        confidence: opportunity.confidence,
+        reasons: opportunity.reasons,
+        riskFlags: opportunity.riskFlags,
+      },
+      marketDataSource: marketDataService.getProviderName(),
+      marketDataMode:
+        marketDataService.getProviderMode() === 'LIVE' ? 'LIVE' : 'MOCK',
+    };
+
+    // Analyze with AI
+    const aiAnalysis = await aiAnalystService.analyze(context);
+
+    res.status(201).json(aiAnalysis);
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    console.error('AI analysis error:', errorMessage);
+
+    res.status(400).json({
+      error: {
+        code: 'AI_ANALYSIS_ERROR',
+        message: `Failed to analyze market: ${errorMessage}`,
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/ai/analysis/:id', async (req: Request, res: Response) => {
+  try {
+    z.string().trim().min(1).parse(req.params.id);
+
+    // TODO: Implement retrieval from database when persistence is added
+    // For now, return a structured error
+    res.status(501).json({
+      error: {
+        code: 'NOT_IMPLEMENTED',
+        message:
+          'Analysis retrieval is not yet implemented. Run a new analysis instead.',
+      },
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_REQUEST',
+        message: 'Invalid analysis ID',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/ai/status', (req: Request, res: Response) => {
+  res.json({
+    provider: aiAnalystService.getProviderName(),
+    model: aiAnalystService.getModelName(),
+    status: 'operational',
     timestamp: new Date(),
   });
 });
