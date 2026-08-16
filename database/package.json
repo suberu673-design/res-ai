@@ -1,0 +1,23 @@
+{
+  "name": "@forex-platform/database",
+  "version": "0.1.0",
+  "description": "Database schema and migrations",
+  "private": true,
+  "scripts": {
+    "migrate:dev": "prisma migrate dev --name init",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:reset": "prisma migrate reset --force",
+    "seed": "node --loader ts-node/esm seeds/seed.ts",
+    "generate": "prisma generate",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "prisma": "^5.7.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

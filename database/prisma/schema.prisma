@@ -1,0 +1,162 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User - platform user account
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tradingAccounts TradingAccount[]
+  aiEvents        AIEvent[]
+
+  @@map("users")
+}
+
+// TradingAccount - user's trading account (can have multiple)
+model TradingAccount {
+  id             String   @id @default(cuid())
+  userId         String
+  accountName    String
+  accountType    String   @default("DEMO") // DEMO or LIVE
+  currency       String   @default("USD")
+  initialBalance Float
+  currentBalance Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trades    Trade[]
+  positions Position[]
+  orders    Order[]
+
+  @@index([userId])
+  @@map("trading_accounts")
+}
+
+// MarketPair - forex pairs like EUR/USD
+model MarketPair {
+  id              String   @id @default(cuid())
+  symbol          String   @unique
+  baseCurrency    String
+  quoteCurrency   String
+  description     String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trades    Trade[]
+  positions Position[]
+  orders    Order[]
+
+  @@map("market_pairs")
+}
+
+// Strategy - trading strategies
+model Strategy {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String   @default("")
+  tradingStyle  String   @default("SWING") // SCALPING, INTRADAY, SHORT_TERM, SWING, POSITION
+  operatingMode String   @default("SCOUT") // SCOUT, ANALYST, AUTONOMOUS_PAPER, HUMAN_APPROVAL, LIVE_AUTONOMOUS
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("strategies")
+}
+
+// Trade - record of a trade (completed or active)
+model Trade {
+  id                String   @id @default(cuid())
+  accountId         String
+  pairId            String
+  direction         String   @default("LONG") // LONG or SHORT
+  entryPrice        Float
+  entryTime         DateTime
+  exitPrice         Float?
+  exitTime          DateTime?
+  quantity          Float
+  status            String   @default("OPEN") // PROPOSED, OPEN, CLOSED, CANCELLED, REJECTED
+  profitLoss        Float?
+  profitLossPercent Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pair    MarketPair     @relation(fields: [pairId], references: [id])
+
+  @@index([accountId])
+  @@index([pairId])
+  @@map("trades")
+}
+
+// Position - an active open position
+model Position {
+  id        String   @id @default(cuid())
+  accountId String
+  pairId    String
+  direction String   @default("LONG") // LONG or SHORT
+  entryPrice Float
+  entryTime DateTime
+  quantity  Float
+  status    String   @default("OPEN") // OPEN, CLOSED, CANCELLED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pair    MarketPair     @relation(fields: [pairId], references: [id])
+
+  @@index([accountId])
+  @@index([pairId])
+  @@map("positions")
+}
+
+// Order - pending or executed orders
+model Order {
+  id        String   @id @default(cuid())
+  accountId String
+  pairId    String
+  direction String   @default("LONG") // LONG or SHORT
+  orderType String   @default("MARKET") // MARKET, LIMIT, STOP, STOP_LIMIT
+  quantity  Float
+  price     Float?
+  stopPrice Float?
+  status    String   @default("PENDING") // PENDING, EXECUTED, CANCELLED, REJECTED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pair    MarketPair     @relation(fields: [pairId], references: [id])
+
+  @@index([accountId])
+  @@index([pairId])
+  @@map("orders")
+}
+
+// AIEvent - log of AI decisions and reasoning
+model AIEvent {
+  id        String   @id @default(cuid())
+  accountId String?
+  eventType String
+  action    String
+  reasoning String
+  confidence Float   @default(0.5)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@map("ai_events")
+}

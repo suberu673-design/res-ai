@@ -1,0 +1,52 @@
+{
+  "name": "AI Forex Platform",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next",
+        "ms-vscode.Theme-TomorrowKit",
+        "GitHub.copilot",
+        "cweijan.vscode-postgresql-client2",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[javascript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "prettier.singleQuote": true,
+        "prettier.trailingComma": "es5",
+        "prettier.semi": true,
+        "typescript.tsserver.useSeparateSyntaxServer": false
+      }
+    }
+  },
+  "postCreateCommand": "npm install && npm run db:up && sleep 3 && npm run db:migrate && npm run db:seed",
+  "remoteUser": "node",
+  "forwardPorts": [3000, 3001, 5432],
+  "forwardPortsActivity": {
+    "3000": "ignore",
+    "3001": "ignore",
+    "5432": "ignore"
+  }
+}
+

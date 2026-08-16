@@ -1,0 +1,40 @@
+{
+  "name": "ai-forex-platform",
+  "version": "0.1.0",
+  "description": "AI-powered forex trading platform",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "format": "prettier --write \"**/*.{js,ts,jsx,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,ts,jsx,tsx,json,md}\"",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:health": "docker compose exec postgres pg_isready -U ai_forex",
+    "db:reset": "docker compose down -v && docker compose up -d postgres",
+    "db:migrate": "cd database && npm run migrate:dev",
+    "db:seed": "cd database && npm run seed",
+    "db:setup": "npm run db:up && sleep 3 && npm run db:migrate && npm run db:seed",
+    "db:pull": "cd database && npx prisma db pull",
+    "db:push": "cd database && npx prisma db push",
+    "db:studio": "cd database && npm run studio"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
