@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { AnalysisPanel } from '../components/AnalysisPanel';
+import { MarketIntelligencePanel } from '../components/MarketIntelligencePanel';
 import { MetricCard } from '../components/MetricCard';
 import { OpportunityTable } from '../components/OpportunityTable';
 import { PositionTable } from '../components/PositionTable';
@@ -96,6 +97,8 @@ export default function DashboardPage() {
             </div>
           </div>
         </section>
+
+        <MarketIntelligencePanel pair={selectedOpportunity.pair.replace('/', '').replace(' ', '')} />
       </div>
     </AppShell>
   );

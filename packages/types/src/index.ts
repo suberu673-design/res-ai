@@ -235,6 +235,105 @@ export interface MarketDataStatus {
   lastError?: string;
 }
 
+export enum MarketTrend {
+  BULLISH = 'BULLISH',
+  BEARISH = 'BEARISH',
+  SIDEWAYS = 'SIDEWAYS',
+  UNKNOWN = 'UNKNOWN',
+}
+
+export enum MomentumStrength {
+  STRONG_BULLISH = 'STRONG_BULLISH',
+  BULLISH = 'BULLISH',
+  NEUTRAL = 'NEUTRAL',
+  BEARISH = 'BEARISH',
+  STRONG_BEARISH = 'STRONG_BEARISH',
+}
+
+export enum VolatilityRegime {
+  LOW = 'LOW',
+  NORMAL = 'NORMAL',
+  HIGH = 'HIGH',
+  EXTREME = 'EXTREME',
+}
+
+export enum MarketStructureType {
+  HIGHER_HIGHS = 'HIGHER_HIGHS',
+  HIGHER_LOWS = 'HIGHER_LOWS',
+  LOWER_HIGHS = 'LOWER_HIGHS',
+  LOWER_LOWS = 'LOWER_LOWS',
+  RANGE = 'RANGE',
+  BREAKOUT = 'BREAKOUT',
+  BREAKDOWN = 'BREAKDOWN',
+  UNKNOWN = 'UNKNOWN',
+}
+
+export enum SupportResistanceType {
+  SUPPORT = 'SUPPORT',
+  RESISTANCE = 'RESISTANCE',
+}
+
+export enum CurrencyStrengthLevel {
+  STRONG = 'STRONG',
+  MODERATE = 'MODERATE',
+  NEUTRAL = 'NEUTRAL',
+  WEAK = 'WEAK',
+}
+
+export interface SupportResistanceLevel {
+  price: number;
+  type: SupportResistanceType;
+  strength: number;
+  source: string;
+}
+
+export interface BollingerBandsSnapshot {
+  upper: number | null;
+  middle: number | null;
+  lower: number | null;
+  stdDev: number | null;
+}
+
+export interface IndicatorSnapshot {
+  rsi: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  ema100: number | null;
+  ema200: number | null;
+  macd: number | null;
+  signal: number | null;
+  histogram: number | null;
+  atr: number | null;
+  adx: number | null;
+  roc: number | null;
+  bollingerBands: BollingerBandsSnapshot | null;
+  valid: boolean;
+  dataStatus: 'ok' | 'insufficient_data' | 'no_data' | 'error';
+  source: string;
+}
+
+export interface CurrencyStrengthEntry {
+  currency: string;
+  score: number;
+  label: CurrencyStrengthLevel;
+}
+
+export interface MarketState {
+  symbol: string;
+  timeframe: string;
+  timestamp: Date;
+  trend: MarketTrend;
+  momentum: MomentumStrength;
+  volatility: VolatilityRegime;
+  marketStructure: MarketStructureType;
+  supportLevels: SupportResistanceLevel[];
+  resistanceLevels: SupportResistanceLevel[];
+  indicators: IndicatorSnapshot;
+  source: string;
+  dataStatus: 'ok' | 'insufficient_data' | 'no_data' | 'error';
+  currencyStrength?: CurrencyStrengthEntry[];
+}
+
 /**
  * API Error Response
  */

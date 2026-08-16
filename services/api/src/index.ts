@@ -1,8 +1,9 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
-import { HealthStatus, VersionInfo, Environment, MarketTimeframe } from '@forex-platform/types';
+import { HealthStatus, VersionInfo, Environment, MarketTimeframe, type MarketState } from '@forex-platform/types';
 import { createMarketDataProvider, MarketDataService } from '@forex-platform/market-data';
+import { MarketIntelligenceService } from '@forex-platform/market-intelligence';
 import { z } from 'zod';
 
 const app: Express = express();
@@ -22,6 +23,7 @@ const marketDataService = new MarketDataService({
   provider: createMarketDataProvider(providerMode === 'LIVE' ? 'LIVE' : 'MOCK', process.env.MARKET_DATA_API_KEY),
   defaultTimeframe: MarketTimeframe.FIFTEEN_MINUTES,
 });
+const marketIntelligenceService = new MarketIntelligenceService();
 
 type CandleWrite = {
   symbol: string;
@@ -195,6 +197,47 @@ app.get('/api/market/candles/:symbol', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/analysis/:symbol', async (req: Request, res: Response) => {
+  try {
+    const symbol = symbolParamSchema.parse(req.params.symbol);
+    const timeframe = timeframeSchema.parse(req.query.timeframe ?? '1h');
+    const limit = limitSchema.parse(req.query.limit ?? 220);
+    const timeframeEnum = timeframe as MarketTimeframe;
+
+    const candles = await marketDataService.getHistoricalCandles(symbol, timeframeEnum, limit);
+    const analysis = marketIntelligenceService.analyzePair({
+      symbol,
+      timeframe: timeframeEnum,
+      candles,
+      source: marketDataService.getProviderName(),
+      dataStatus: candles.length >= 50 ? 'ok' : 'insufficient_data',
+      quote: candles.at(-1)?.close ?? null,
+    });
+
+    const payload: MarketState & {
+      sourceMode: 'LIVE' | 'MOCK';
+      dataStatus: string;
+      timestamp: Date;
+    } = {
+      ...analysis,
+      sourceMode: marketDataService.getProviderMode(),
+      source: marketDataService.getProviderName(),
+      dataStatus: analysis.dataStatus ?? 'ok',
+      timestamp: new Date(),
+    };
+
+    res.json(payload);
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_ANALYSIS_REQUEST',
+        message: 'Symbol, timeframe, and history requirements are invalid.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'AI Forex Platform API',
@@ -206,6 +249,7 @@ app.get('/', (req: Request, res: Response) => {
       marketPairs: '/api/market/pairs',
       marketQuote: '/api/market/quote/:symbol',
       marketCandles: '/api/market/candles/:symbol',
+      marketAnalysis: '/api/analysis/:symbol?timeframe=1h',
     },
   });
 });
