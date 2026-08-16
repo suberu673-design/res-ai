@@ -1,3 +1,4 @@
+import React from 'react';
 import { TradeStatus } from '@forex-platform/types';
 import { positionRows } from '../../lib/demo-data';
 
@@ -21,20 +22,30 @@ export function PositionTable() {
         <tbody>
           {positionRows.map((row) => (
             <tr key={row.pair} className="border-t border-slate-800">
-              <td className="px-4 py-3 font-medium text-slate-100">{row.pair}</td>
+              <td className="px-4 py-3 font-medium text-slate-100">
+                {row.pair}
+              </td>
               <td className="px-4 py-3">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${row.direction === 'LONG' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                <span
+                  className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${row.direction === 'LONG' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}
+                >
                   {row.direction}
                 </span>
               </td>
               <td className="px-4 py-3 text-slate-200">{row.entry}</td>
               <td className="px-4 py-3 text-slate-200">{row.current}</td>
-              <td className={`px-4 py-3 font-medium ${row.pnl.startsWith('+') ? 'text-emerald-300' : 'text-rose-300'}`}>{row.pnl}</td>
+              <td
+                className={`px-4 py-3 font-medium ${row.pnl.startsWith('+') ? 'text-emerald-300' : 'text-rose-300'}`}
+              >
+                {row.pnl}
+              </td>
               <td className="px-4 py-3 text-slate-200">{row.rMultiple}</td>
               <td className="px-4 py-3 text-slate-200">{row.strategy}</td>
               <td className="px-4 py-3 text-slate-200">{row.tradingStyle}</td>
               <td className="px-4 py-3">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${row.status === TradeStatus.OPEN ? 'bg-amber-500/10 text-amber-300' : 'bg-slate-500/10 text-slate-300'}`}>
+                <span
+                  className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${row.status === TradeStatus.OPEN ? 'bg-amber-500/10 text-amber-300' : 'bg-slate-500/10 text-slate-300'}`}
+                >
                   {row.status}
                 </span>
               </td>

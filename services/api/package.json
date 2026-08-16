@@ -16,6 +16,7 @@
   "dependencies": {
     "@forex-platform/market-data": "file:../../services/market-data",
     "@forex-platform/market-intelligence": "file:../../services/market-intelligence",
+    "@forex-platform/opportunity-engine": "file:../../services/opportunity-engine",
     "@forex-platform/types": "file:../../packages/types",
     "@prisma/client": "^5.7.1",
     "cors": "^2.8.5",

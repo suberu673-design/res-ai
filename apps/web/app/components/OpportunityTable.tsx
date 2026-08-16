@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { TradeDirection } from '@forex-platform/types';
 import { opportunityRows } from '../../lib/demo-data';
 
@@ -25,7 +26,9 @@ export function OpportunityTable({ onViewAnalysis }: OpportunityTableProps) {
         <tbody>
           {opportunityRows.map((row) => (
             <tr key={row.pair} className="border-t border-slate-800">
-              <td className="px-4 py-3 font-medium text-slate-100">{row.pair}</td>
+              <td className="px-4 py-3 font-medium text-slate-100">
+                {row.pair}
+              </td>
               <td className="px-4 py-3">
                 <span
                   className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
@@ -38,7 +41,9 @@ export function OpportunityTable({ onViewAnalysis }: OpportunityTableProps) {
                 </span>
               </td>
               <td className="px-4 py-3">
-                <span className="font-semibold text-sky-300">{row.score}/100</span>
+                <span className="font-semibold text-sky-300">
+                  {row.score}/100
+                </span>
               </td>
               <td className="px-4 py-3 text-slate-200">{row.tradingStyle}</td>
               <td className="px-4 py-3 text-slate-200">{row.strategy}</td>

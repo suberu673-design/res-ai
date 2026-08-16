@@ -12,7 +12,9 @@ import {
   SupportResistanceType,
 } from '@forex-platform/types';
 
-export type CandleLike = Partial<Pick<MarketCandle, 'open' | 'timestamp' | 'timeframe' | 'source'>> &
+export type CandleLike = Partial<
+  Pick<MarketCandle, 'open' | 'timestamp' | 'timeframe' | 'source'>
+> &
   Pick<MarketCandle, 'high' | 'low' | 'close'>;
 
 export type TrendInput = {
@@ -32,7 +34,8 @@ export type MomentumInput = {
   roc?: number | null;
 };
 
-export type AnalysisDataStatus = 'ok' | 'insufficient_data' | 'no_data' | 'error';
+export type AnalysisDataStatus =
+  'ok' | 'insufficient_data' | 'no_data' | 'error';
 
 export interface AnalyzePairInput {
   symbol: string;
@@ -45,7 +48,10 @@ export interface AnalyzePairInput {
 
 const pricePrecision = 8;
 
-function finiteNumber(value: number | null | undefined, fallback: number | null = null): number | null {
+function finiteNumber(
+  value: number | null | undefined,
+  fallback: number | null = null
+): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return fallback;
   }
@@ -121,7 +127,12 @@ export function calculateRSI(values: number[], period = 14): number | null {
   return finiteNumber(Math.min(100, Math.max(0, rsi)));
 }
 
-export function calculateMACD(values: number[], fast = 12, slow = 26, signal = 9): {
+export function calculateMACD(
+  values: number[],
+  fast = 12,
+  slow = 26,
+  signal = 9
+): {
   macd: number | null;
   signal: number | null;
   histogram: number | null;
@@ -144,20 +155,38 @@ export function calculateMACD(values: number[], fast = 12, slow = 26, signal = 9
   }
 
   const macdValue = fastEma - slowEma;
-  const macdSeries = series.map((value, index, all) => {
-    const fastWindow = all.slice(Math.max(0, index - effectiveFast + 1), index + 1);
-    const slowWindow = all.slice(Math.max(0, index - effectiveSlow + 1), index + 1);
-    const f = calculateEMA(fastWindow, Math.min(effectiveFast, fastWindow.length));
-    const s = calculateEMA(slowWindow, Math.min(effectiveSlow, slowWindow.length));
-    if (f === null || s === null) {
-      return null;
-    }
-    return f - s;
-  }).filter((value): value is number => value !== null);
+  const macdSeries = series
+    .map((value, index, all) => {
+      const fastWindow = all.slice(
+        Math.max(0, index - effectiveFast + 1),
+        index + 1
+      );
+      const slowWindow = all.slice(
+        Math.max(0, index - effectiveSlow + 1),
+        index + 1
+      );
+      const f = calculateEMA(
+        fastWindow,
+        Math.min(effectiveFast, fastWindow.length)
+      );
+      const s = calculateEMA(
+        slowWindow,
+        Math.min(effectiveSlow, slowWindow.length)
+      );
+      if (f === null || s === null) {
+        return null;
+      }
+      return f - s;
+    })
+    .filter((value): value is number => value !== null);
 
   const macd = macdSeries.at(-1) ?? macdValue;
-  const signalValue = macdSeries.length >= Math.min(signal, macdSeries.length) ? calculateEMA(macdSeries, Math.min(signal, macdSeries.length)) : null;
-  const histogram = macd !== null && signalValue !== null ? macd - signalValue : null;
+  const signalValue =
+    macdSeries.length >= Math.min(signal, macdSeries.length)
+      ? calculateEMA(macdSeries, Math.min(signal, macdSeries.length))
+      : null;
+  const histogram =
+    macd !== null && signalValue !== null ? macd - signalValue : null;
 
   return {
     macd: finiteNumber(macd),
@@ -166,7 +195,10 @@ export function calculateMACD(values: number[], fast = 12, slow = 26, signal = 9
   };
 }
 
-export function calculateATR(candles: CandleLike[], period = 14): number | null {
+export function calculateATR(
+  candles: CandleLike[],
+  period = 14
+): number | null {
   if (candles.length < period + 1) {
     return null;
   }
@@ -175,7 +207,11 @@ export function calculateATR(candles: CandleLike[], period = 14): number | null 
   for (let index = 1; index < candles.length; index += 1) {
     const previous = candles[index - 1];
     const current = candles[index];
-    const totalRange = Math.max(current.high - current.low, Math.abs(current.high - previous.close), Math.abs(current.low - previous.close));
+    const totalRange = Math.max(
+      current.high - current.low,
+      Math.abs(current.high - previous.close),
+      Math.abs(current.low - previous.close)
+    );
     trueRanges.push(totalRange);
   }
 
@@ -184,7 +220,11 @@ export function calculateATR(candles: CandleLike[], period = 14): number | null 
   return averageTR === null ? null : finiteNumber(averageTR);
 }
 
-export function calculateBollingerBands(values: number[], period = 20, standardDeviations = 2): {
+export function calculateBollingerBands(
+  values: number[],
+  period = 20,
+  standardDeviations = 2
+): {
   upper: number | null;
   middle: number | null;
   lower: number | null;
@@ -214,7 +254,10 @@ export function calculateBollingerBands(values: number[], period = 20, standardD
   };
 }
 
-export function calculateADX(candles: CandleLike[], period = 14): number | null {
+export function calculateADX(
+  candles: CandleLike[],
+  period = 14
+): number | null {
   if (candles.length < period * 2) {
     return null;
   }
@@ -232,16 +275,28 @@ export function calculateADX(candles: CandleLike[], period = 14): number | null 
     const minus = downMove > upMove && downMove > 0 ? downMove : 0;
     plusDM.push(plus);
     minusDM.push(minus);
-    trueRanges.push(Math.max(current.high - current.low, Math.abs(current.high - previous.close), Math.abs(current.low - previous.close)));
+    trueRanges.push(
+      Math.max(
+        current.high - current.low,
+        Math.abs(current.high - previous.close),
+        Math.abs(current.low - previous.close)
+      )
+    );
   }
 
   if (plusDM.length < period) {
     return null;
   }
 
-  let prevPlus = plusDM.slice(0, period).reduce((total, value) => total + value, 0);
-  let prevMinus = minusDM.slice(0, period).reduce((total, value) => total + value, 0);
-  let prevTr = trueRanges.slice(0, period).reduce((total, value) => total + value, 0);
+  let prevPlus = plusDM
+    .slice(0, period)
+    .reduce((total, value) => total + value, 0);
+  let prevMinus = minusDM
+    .slice(0, period)
+    .reduce((total, value) => total + value, 0);
+  let prevTr = trueRanges
+    .slice(0, period)
+    .reduce((total, value) => total + value, 0);
 
   const dxSeries: number[] = [];
   for (let index = period; index < plusDM.length; index += 1) {
@@ -256,7 +311,8 @@ export function calculateADX(candles: CandleLike[], period = 14): number | null 
     const diPlus = prevTr === 0 ? 0 : (100 * prevPlus) / prevTr;
     const diMinus = prevTr === 0 ? 0 : (100 * prevMinus) / prevTr;
     const denominator = diPlus + diMinus;
-    const dx = denominator === 0 ? 0 : (100 * Math.abs(diPlus - diMinus)) / denominator;
+    const dx =
+      denominator === 0 ? 0 : (100 * Math.abs(diPlus - diMinus)) / denominator;
     dxSeries.push(dx);
   }
 
@@ -264,7 +320,10 @@ export function calculateADX(candles: CandleLike[], period = 14): number | null 
     return null;
   }
 
-  const adx = calculateSMA(dxSeries.slice(-period), Math.min(period, dxSeries.length));
+  const adx = calculateSMA(
+    dxSeries.slice(-period),
+    Math.min(period, dxSeries.length)
+  );
   return adx === null ? null : finiteNumber(adx);
 }
 
@@ -288,7 +347,12 @@ export function classifyTrend(input: TrendInput): MarketTrend {
   const recentHigh = finiteNumber(input.recentHigh);
   const recentLow = finiteNumber(input.recentLow);
 
-  if (latestClose === null || ema20 === null || ema50 === null || ema200 === null) {
+  if (
+    latestClose === null ||
+    ema20 === null ||
+    ema50 === null ||
+    ema200 === null
+  ) {
     return MarketTrend.UNKNOWN;
   }
 
@@ -297,17 +361,25 @@ export function classifyTrend(input: TrendInput): MarketTrend {
   const midAboveLong = ema50 > ema200;
   const structure = String(input.marketStructure ?? '').toUpperCase();
 
-  if ((priceAboveShort && shortAboveMid && midAboveLong) || structure.includes('HIGHER') || structure.includes('BREAKOUT')) {
+  if (
+    (priceAboveShort && shortAboveMid && midAboveLong) ||
+    structure.includes('HIGHER') ||
+    structure.includes('BREAKOUT')
+  ) {
     return MarketTrend.BULLISH;
   }
 
-  if ((latestClose < ema20 && ema20 < ema50 && ema50 < ema200) || structure.includes('LOWER') || structure.includes('BREAKDOWN')) {
+  if (
+    (latestClose < ema20 && ema20 < ema50 && ema50 < ema200) ||
+    structure.includes('LOWER') ||
+    structure.includes('BREAKDOWN')
+  ) {
     return MarketTrend.BEARISH;
   }
 
   if (recentHigh !== null && recentLow !== null) {
     const spread = recentHigh - recentLow;
-    if (spread > 0 && Math.abs(latestClose - ema20) <= (spread * 0.1)) {
+    if (spread > 0 && Math.abs(latestClose - ema20) <= spread * 0.1) {
       return MarketTrend.SIDEWAYS;
     }
   }
@@ -352,7 +424,9 @@ export function classifyVolatility(normalizedAtr: number): VolatilityRegime {
   return VolatilityRegime.EXTREME;
 }
 
-export function detectMarketStructure(candles: CandleLike[]): MarketStructureType {
+export function detectMarketStructure(
+  candles: CandleLike[]
+): MarketStructureType {
   if (candles.length < 5) {
     return MarketStructureType.UNKNOWN;
   }
@@ -398,10 +472,14 @@ export function detectMarketStructure(candles: CandleLike[]): MarketStructureTyp
   return MarketStructureType.UNKNOWN;
 }
 
-function dedupeLevels(levels: SupportResistanceLevel[]): SupportResistanceLevel[] {
+function dedupeLevels(
+  levels: SupportResistanceLevel[]
+): SupportResistanceLevel[] {
   const deduped: SupportResistanceLevel[] = [];
   for (const level of levels) {
-    const existing = deduped.find((candidate) => Math.abs(candidate.price - level.price) <= 0.0005);
+    const existing = deduped.find(
+      (candidate) => Math.abs(candidate.price - level.price) <= 0.0005
+    );
     if (!existing) {
       deduped.push(level);
     } else {
@@ -411,7 +489,10 @@ function dedupeLevels(levels: SupportResistanceLevel[]): SupportResistanceLevel[
   return deduped.sort((left, right) => left.price - right.price);
 }
 
-export function detectSupportResistance(candles: CandleLike[]): { supportLevels: SupportResistanceLevel[]; resistanceLevels: SupportResistanceLevel[] } {
+export function detectSupportResistance(candles: CandleLike[]): {
+  supportLevels: SupportResistanceLevel[];
+  resistanceLevels: SupportResistanceLevel[];
+} {
   if (candles.length < 5) {
     return { supportLevels: [], resistanceLevels: [] };
   }
@@ -453,7 +534,9 @@ export function detectSupportResistance(candles: CandleLike[]): { supportLevels:
   };
 }
 
-export function deriveCurrencyStrength(pairValues: Record<string, number>): CurrencyStrengthEntry[] {
+export function deriveCurrencyStrength(
+  pairValues: Record<string, number>
+): CurrencyStrengthEntry[] {
   const scoreTable: Record<string, number> = {
     USD: 0,
     EUR: 0,
@@ -534,7 +617,9 @@ export class MarketIntelligenceService {
   }
 
   analyzeCandles(input: AnalyzePairInput): MarketState {
-    const normalizedSymbol = String(input.symbol ?? '').trim().toUpperCase();
+    const normalizedSymbol = String(input.symbol ?? '')
+      .trim()
+      .toUpperCase();
     const candles = Array.isArray(input.candles) ? input.candles : [];
 
     if (!candles.length) {
@@ -570,7 +655,9 @@ export class MarketIntelligenceService {
       };
     }
 
-    const closes = candles.map((candle) => candle.close).filter((value) => Number.isFinite(value));
+    const closes = candles
+      .map((candle) => candle.close)
+      .filter((value) => Number.isFinite(value));
     const ema20 = calculateEMA(closes, 20);
     const ema50 = calculateEMA(closes, 50);
     const ema100 = calculateEMA(closes, 100);
@@ -591,8 +678,18 @@ export class MarketIntelligenceService {
       ema20,
       ema50,
       ema200,
-      recentHigh: candles.slice(-20).reduce((max, candle) => Math.max(max, candle.high), Number.NEGATIVE_INFINITY),
-      recentLow: candles.slice(-20).reduce((min, candle) => Math.min(min, candle.low), Number.POSITIVE_INFINITY),
+      recentHigh: candles
+        .slice(-20)
+        .reduce(
+          (max, candle) => Math.max(max, candle.high),
+          Number.NEGATIVE_INFINITY
+        ),
+      recentLow: candles
+        .slice(-20)
+        .reduce(
+          (min, candle) => Math.min(min, candle.low),
+          Number.POSITIVE_INFINITY
+        ),
       marketStructure: structure,
     });
     const momentum = classifyMomentum({

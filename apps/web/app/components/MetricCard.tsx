@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface MetricCardProps {
   label: string;
   value: string;
@@ -24,13 +26,24 @@ const toneStyles = {
   },
 };
 
-export function MetricCard({ label, value, note, tone = 'neutral' }: MetricCardProps) {
+export function MetricCard({
+  label,
+  value,
+  note,
+  tone = 'neutral',
+}: MetricCardProps) {
   const styles = toneStyles[tone];
 
   return (
-    <div className={`rounded-xl border bg-slate-900/70 p-4 shadow-sm shadow-slate-950/30 ${styles.border}`}>
-      <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className={`mt-3 text-2xl font-semibold ${styles.value}`}>{value}</div>
+    <div
+      className={`rounded-xl border bg-slate-900/70 p-4 shadow-sm shadow-slate-950/30 ${styles.border}`}
+    >
+      <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+        {label}
+      </div>
+      <div className={`mt-3 text-2xl font-semibold ${styles.value}`}>
+        {value}
+      </div>
       <div className="mt-1 text-xs text-slate-400">{note}</div>
     </div>
   );

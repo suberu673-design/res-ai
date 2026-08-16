@@ -1,3 +1,5 @@
+import React from 'react';
+
 type StatusTone = 'positive' | 'negative' | 'neutral' | 'warning';
 
 interface StatusIndicatorProps {
@@ -14,12 +16,24 @@ const toneStyles: Record<StatusTone, string> = {
   warning: 'text-amber-300 bg-amber-500/10 border border-amber-500/30',
 };
 
-export function StatusIndicator({ label, value, tone = 'neutral', dot = false }: StatusIndicatorProps) {
+export function StatusIndicator({
+  label,
+  value,
+  tone = 'neutral',
+  dot = false,
+}: StatusIndicatorProps) {
   return (
     <div className={`rounded-md px-3 py-2 ${toneStyles[tone]}`}>
-      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+        {label}
+      </div>
       <div className="mt-1 flex items-center gap-2 text-sm font-medium text-slate-100">
-        {dot ? <span className="h-2 w-2 rounded-full bg-current" aria-label={`${label} status indicator`} /> : null}
+        {dot ? (
+          <span
+            className="h-2 w-2 rounded-full bg-current"
+            aria-label={`${label} status indicator`}
+          />
+        ) : null}
         <span>{value}</span>
       </div>
     </div>

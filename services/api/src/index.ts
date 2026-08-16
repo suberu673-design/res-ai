@@ -1,9 +1,26 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
-import { HealthStatus, VersionInfo, Environment, MarketTimeframe, type MarketState } from '@forex-platform/types';
-import { createMarketDataProvider, MarketDataService } from '@forex-platform/market-data';
+import {
+  HealthStatus,
+  VersionInfo,
+  Environment,
+  MarketTimeframe,
+  TradingMode,
+  buildTradingContext,
+  getTradingModeConfiguration,
+  normalizeTradingMode,
+  type MarketState,
+} from '@forex-platform/types';
+import {
+  createMarketDataProvider,
+  MarketDataService,
+} from '@forex-platform/market-data';
 import { MarketIntelligenceService } from '@forex-platform/market-intelligence';
+import {
+  buildOpportunityFromMarketState,
+  scanOpportunitySet,
+} from '@forex-platform/opportunity-engine';
 import { z } from 'zod';
 
 const app: Express = express();
@@ -18,9 +35,16 @@ const PORT = Number(process.env.API_PORT || 3001);
 const HOST = process.env.API_HOST || '0.0.0.0';
 const API_VERSION = '0.1.0';
 const APP_ENV = (process.env.APP_ENV || 'development') as Environment;
-const providerMode = (process.env.MARKET_DATA_MODE || process.env.MARKET_DATA_PROVIDER || 'mock').toUpperCase();
+const providerMode = (
+  process.env.MARKET_DATA_MODE ||
+  process.env.MARKET_DATA_PROVIDER ||
+  'mock'
+).toUpperCase();
 const marketDataService = new MarketDataService({
-  provider: createMarketDataProvider(providerMode === 'LIVE' ? 'LIVE' : 'MOCK', process.env.MARKET_DATA_API_KEY),
+  provider: createMarketDataProvider(
+    providerMode === 'LIVE' ? 'LIVE' : 'MOCK',
+    process.env.MARKET_DATA_API_KEY
+  ),
   defaultTimeframe: MarketTimeframe.FIFTEEN_MINUTES,
 });
 const marketIntelligenceService = new MarketIntelligenceService();
@@ -74,9 +98,29 @@ async function persistCandles(candles: CandleWrite[]) {
 
 const symbolParamSchema = z.string().trim().min(1);
 const timeframeSchema = z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d']);
+const contextTimeframeSchema = z.enum([
+  '1m',
+  '5m',
+  '15m',
+  '30m',
+  '1h',
+  '4h',
+  '1d',
+  '1w',
+]);
 const limitSchema = z.coerce.number().int().min(1).max(500).default(200);
+const tradingModeSchema = z.string().transform((value) => {
+  const mode = normalizeTradingMode(value);
+  if (!mode) {
+    throw new Error('INVALID_TRADING_MODE');
+  }
+  return mode;
+});
 
-async function checkDatabaseHealth(): Promise<{ connected: boolean; latency?: number }> {
+async function checkDatabaseHealth(): Promise<{
+  connected: boolean;
+  latency?: number;
+}> {
   try {
     const startTime = Date.now();
     await prisma.$queryRaw`SELECT 1`;
@@ -161,7 +205,11 @@ app.get('/api/market/candles/:symbol', async (req: Request, res: Response) => {
     const limit = limitSchema.parse(req.query.limit ?? 200);
     const timeframeEnum = timeframe as MarketTimeframe;
 
-    const candles = await marketDataService.getHistoricalCandles(symbol, timeframeEnum, limit);
+    const candles = await marketDataService.getHistoricalCandles(
+      symbol,
+      timeframeEnum,
+      limit
+    );
     try {
       const writes: CandleWrite[] = candles.map((candle) => ({
         symbol: candle.symbol,
@@ -204,7 +252,11 @@ app.get('/api/analysis/:symbol', async (req: Request, res: Response) => {
     const limit = limitSchema.parse(req.query.limit ?? 220);
     const timeframeEnum = timeframe as MarketTimeframe;
 
-    const candles = await marketDataService.getHistoricalCandles(symbol, timeframeEnum, limit);
+    const candles = await marketDataService.getHistoricalCandles(
+      symbol,
+      timeframeEnum,
+      limit
+    );
     const analysis = marketIntelligenceService.analyzePair({
       symbol,
       timeframe: timeframeEnum,
@@ -238,6 +290,241 @@ app.get('/api/analysis/:symbol', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/trading-modes', (req: Request, res: Response) => {
+  const modes = Object.values(TradingMode).map((mode) => ({
+    mode,
+    ...getTradingModeConfiguration(mode),
+  }));
+
+  res.json({
+    count: modes.length,
+    modes,
+  });
+});
+
+app.get('/api/trading-modes/:mode', (req: Request, res: Response) => {
+  try {
+    const mode = tradingModeSchema.parse(req.params.mode);
+    res.json({
+      mode,
+      ...getTradingModeConfiguration(mode),
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_TRADING_MODE',
+        message: 'The requested trading mode is not recognized.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/trading-context/:symbol', async (req: Request, res: Response) => {
+  try {
+    const symbol = symbolParamSchema.parse(req.params.symbol);
+    const mode = tradingModeSchema.parse(req.query.mode ?? TradingMode.SWING);
+    const timeframe = contextTimeframeSchema.parse(req.query.timeframe ?? '4h');
+    const timeframeEnum = timeframe as MarketTimeframe;
+
+    let marketState: Partial<MarketState> | null = null;
+    try {
+      const candles = await marketDataService.getHistoricalCandles(
+        symbol,
+        timeframeEnum,
+        220
+      );
+      const analysis = marketIntelligenceService.analyzePair({
+        symbol,
+        timeframe: timeframeEnum,
+        candles,
+        source: marketDataService.getProviderName(),
+        dataStatus: candles.length >= 50 ? 'ok' : 'insufficient_data',
+        quote: candles.at(-1)?.close ?? null,
+      });
+      marketState = analysis;
+    } catch (error) {
+      marketState = null;
+    }
+
+    const context = buildTradingContext({
+      symbol,
+      mode,
+      timeframe,
+      marketState,
+    });
+
+    res.json(context);
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_TRADING_CONTEXT_REQUEST',
+        message: 'Symbol, mode, and timeframe inputs are invalid.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/opportunities', async (req: Request, res: Response) => {
+  try {
+    const mode = tradingModeSchema.parse(req.query.mode ?? TradingMode.SWING);
+    const timeframe = contextTimeframeSchema.parse(req.query.timeframe ?? '4h');
+    const limit = z.coerce.number().int().min(1).max(10).default(5).parse(req.query.limit ?? 5);
+    const timeframeEnum = timeframe as MarketTimeframe;
+    const symbols = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'EURGBP', 'GBPJPY', 'NZDUSD'];
+
+    const opportunities = await Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const candles = await marketDataService.getHistoricalCandles(
+            symbol,
+            timeframeEnum,
+            220
+          );
+          const analysis = marketIntelligenceService.analyzePair({
+            symbol,
+            timeframe: timeframeEnum,
+            candles,
+            source: marketDataService.getProviderName(),
+            dataStatus: candles.length >= 50 ? 'ok' : 'insufficient_data',
+            quote: candles.at(-1)?.close ?? null,
+          });
+
+          return {
+            symbol,
+            state: analysis,
+            mode,
+          };
+        } catch (error) {
+          return { symbol, state: null, mode };
+        }
+      })
+    );
+
+    const ranked = scanOpportunitySet(opportunities, {
+      minimumScore: 55,
+      minimumConfidence: 45,
+      requireValidData: true,
+      minTrendStrength: 1,
+    }).slice(0, limit);
+
+    res.json({
+      mode,
+      timeframe,
+      count: ranked.length,
+      opportunities: ranked,
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_OPPORTUNITY_REQUEST',
+        message: 'Mode, timeframe, and opportunity filters are invalid.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/opportunities/:symbol', async (req: Request, res: Response) => {
+  try {
+    const symbol = symbolParamSchema.parse(req.params.symbol);
+    const mode = tradingModeSchema.parse(req.query.mode ?? TradingMode.SWING);
+    const timeframe = contextTimeframeSchema.parse(req.query.timeframe ?? '4h');
+    const timeframeEnum = timeframe as MarketTimeframe;
+
+    const candles = await marketDataService.getHistoricalCandles(
+      symbol,
+      timeframeEnum,
+      220
+    );
+    const analysis = marketIntelligenceService.analyzePair({
+      symbol,
+      timeframe: timeframeEnum,
+      candles,
+      source: marketDataService.getProviderName(),
+      dataStatus: candles.length >= 50 ? 'ok' : 'insufficient_data',
+      quote: candles.at(-1)?.close ?? null,
+    });
+
+    const opportunity = buildOpportunityFromMarketState(analysis, mode);
+    res.json({
+      symbol,
+      timeframe,
+      mode,
+      opportunity,
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_SYMBOL_OPPORTUNITY',
+        message: 'The requested symbol could not be analyzed for opportunities.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/scanner', async (req: Request, res: Response) => {
+  try {
+    const mode = tradingModeSchema.parse(req.query.mode ?? TradingMode.SWING);
+    const timeframe = contextTimeframeSchema.parse(req.query.timeframe ?? '4h');
+    const limit = z.coerce.number().int().min(1).max(10).default(5).parse(req.query.limit ?? 5);
+    const timeframeEnum = timeframe as MarketTimeframe;
+    const symbols = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'EURGBP', 'GBPJPY'];
+
+    const candidates = await Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const candles = await marketDataService.getHistoricalCandles(
+            symbol,
+            timeframeEnum,
+            220
+          );
+          const analysis = marketIntelligenceService.analyzePair({
+            symbol,
+            timeframe: timeframeEnum,
+            candles,
+            source: marketDataService.getProviderName(),
+            dataStatus: candles.length >= 50 ? 'ok' : 'insufficient_data',
+            quote: candles.at(-1)?.close ?? null,
+          });
+          return {
+            symbol,
+            state: analysis,
+            mode,
+          };
+        } catch (error) {
+          return { symbol, state: null, mode };
+        }
+      })
+    );
+
+    const opportunities = scanOpportunitySet(candidates, {
+      minimumScore: 60,
+      minimumConfidence: 50,
+      requireValidData: true,
+      minTrendStrength: 1,
+    }).slice(0, limit);
+
+    res.json({
+      mode,
+      timeframe,
+      count: opportunities.length,
+      opportunities,
+      generatedAt: new Date(),
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_SCAN_REQUEST',
+        message: 'Scanner criteria are invalid.',
+      },
+      timestamp: new Date(),
+    });
+  }
+});
+
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'AI Forex Platform API',
@@ -250,6 +537,11 @@ app.get('/', (req: Request, res: Response) => {
       marketQuote: '/api/market/quote/:symbol',
       marketCandles: '/api/market/candles/:symbol',
       marketAnalysis: '/api/analysis/:symbol?timeframe=1h',
+      tradingModes: '/api/trading-modes',
+      tradingModeDetail: '/api/trading-modes/:mode',
+      tradingContext: '/api/trading-context/:symbol?mode=SWING&timeframe=4h',
+      opportunities: '/api/opportunities?mode=SWING&timeframe=4h',
+      scanner: '/api/scanner?mode=SWING&timeframe=4h',
     },
   });
 });
@@ -287,7 +579,9 @@ async function start() {
     console.log('Database: unavailable');
   }
 
-  console.log(`Market data provider: ${marketDataService.getProviderName()} (${marketDataService.getProviderMode()})`);
+  console.log(
+    `Market data provider: ${marketDataService.getProviderName()} (${marketDataService.getProviderMode()})`
+  );
 
   app.listen(PORT, HOST, () => {
     console.log(`API ready on http://${HOST}:${PORT}`);

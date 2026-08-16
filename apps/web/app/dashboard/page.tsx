@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { AnalysisPanel } from '../components/AnalysisPanel';
@@ -8,23 +8,31 @@ import { MarketIntelligencePanel } from '../components/MarketIntelligencePanel';
 import { MetricCard } from '../components/MetricCard';
 import { OpportunityTable } from '../components/OpportunityTable';
 import { PositionTable } from '../components/PositionTable';
+import { TradingModeSelector } from '../components/TradingModeSelector';
 import { dashboardMetrics, opportunityRows } from '../../lib/demo-data';
 
 export default function DashboardPage() {
-  const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [backendStatus, setBackendStatus] = useState<
+    'online' | 'offline' | 'checking'
+  >('checking');
   const [selectedPair, setSelectedPair] = useState<string | null>('EUR/USD');
 
   const selectedOpportunity = useMemo(
-    () => opportunityRows.find((row) => row.pair === selectedPair) ?? opportunityRows[0],
+    () =>
+      opportunityRows.find((row) => row.pair === selectedPair) ??
+      opportunityRows[0],
     [selectedPair]
   );
 
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/health`, {
-          cache: 'no-store',
-        });
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/health`,
+          {
+            cache: 'no-store',
+          }
+        );
         setBackendStatus(response.ok ? 'online' : 'offline');
       } catch {
         setBackendStatus('offline');
@@ -37,7 +45,11 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <AppShell title="Dashboard" description="AI-powered forex monitoring overview with demo data only." backendStatus={backendStatus}>
+    <AppShell
+      title="Dashboard"
+      description="AI-powered forex monitoring overview with demo data only."
+      backendStatus={backendStatus}
+    >
       <div className="space-y-6">
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {dashboardMetrics.map((metric) => (
@@ -51,17 +63,25 @@ export default function DashboardPage() {
           ))}
         </section>
 
+        <TradingModeSelector />
+
         <section className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 md:p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-100">Opportunity Radar</h2>
-              <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Demo data</span>
+              <h2 className="text-xl font-semibold text-slate-100">
+                Opportunity Radar
+              </h2>
+              <span className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                Demo data
+              </span>
             </div>
             <OpportunityTable onViewAnalysis={setSelectedPair} />
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 md:p-5">
-            <h2 className="text-xl font-semibold text-slate-100">AI Activity Feed</h2>
+            <h2 className="text-xl font-semibold text-slate-100">
+              AI Activity Feed
+            </h2>
             <div className="mt-4">
               <ActivityFeed />
             </div>
@@ -71,14 +91,20 @@ export default function DashboardPage() {
         <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 md:p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-100">Active Positions</h2>
-              <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Paper only</span>
+              <h2 className="text-xl font-semibold text-slate-100">
+                Active Positions
+              </h2>
+              <span className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                Paper only
+              </span>
             </div>
             <PositionTable />
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 md:p-5">
-            <h2 className="text-xl font-semibold text-slate-100">Analysis Panel</h2>
+            <h2 className="text-xl font-semibold text-slate-100">
+              Analysis Panel
+            </h2>
             <div className="mt-4">
               <AnalysisPanel
                 pair={selectedOpportunity.pair}
@@ -98,7 +124,9 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <MarketIntelligencePanel pair={selectedOpportunity.pair.replace('/', '').replace(' ', '')} />
+        <MarketIntelligencePanel
+          pair={selectedOpportunity.pair.replace('/', '').replace(' ', '')}
+        />
       </div>
     </AppShell>
   );
