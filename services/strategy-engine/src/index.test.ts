@@ -696,4 +696,184 @@ describe('Strategy Engine skeleton and first deterministic strategy', () => {
     expect(result).not.toHaveProperty('position');
     expect(result).not.toHaveProperty('trade');
   });
+
+describe('Strategy Engine - StrategyParameters support (M8 Phase 6)', () => {
+  const bullishInput: StrategyEvaluationInput = {
+    symbol: 'EURUSD',
+    timeframe: '4h',
+    marketState: {
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      timestamp: new Date('2026-01-01T00:00:00.000Z'),
+      trend: MarketTrend.BULLISH,
+      momentum: MomentumStrength.BULLISH,
+      volatility: VolatilityRegime.NORMAL,
+      marketStructure: MarketStructureType.HIGHER_HIGHS,
+      supportLevels: [],
+      resistanceLevels: [],
+      indicators: {
+        rsi: 58,
+        ema20: 1.08,
+        ema50: 1.06,
+        ema100: 1.05,
+        ema200: 1.02,
+        macd: 0.001,
+        signal: 0.0008,
+        histogram: 0.0002,
+        atr: 0.001,
+        adx: 25,
+        roc: 0.5,
+        bollingerBands: null,
+        valid: true,
+        dataStatus: 'ok',
+        source: 'mock',
+      },
+      source: 'mock',
+      dataStatus: 'ok',
+    },
+    tradingMode: TradingMode.SWING,
+    tradingStyle: TradingStyle.SWING,
+    strategyId: 'trend-following',
+    parameters: {},
+    strategyVersion: {
+      id: 'trend-following-v1',
+      strategyId: 'trend-following',
+      version: 'v1.0.0',
+      name: 'Trend Following v1',
+      status: 'ACTIVE',
+      parameters: {},
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  };
+
+  const strongBullishInput: StrategyEvaluationInput = {
+    ...bullishInput,
+    marketState: {...bullishInput.marketState!,momentum: MomentumStrength.STRONG_BULLISH,},
+  };
+
+  const bearishInput: StrategyEvaluationInput = {
+    ...bullishInput,
+    marketState: {...bullishInput.marketState!,trend: MarketTrend.BEARISH,momentum: MomentumStrength.BEARISH,},
+  };
+
+  const strongBearishInput: StrategyEvaluationInput = {
+    ...bullishInput,
+    marketState: {...bullishInput.marketState!,trend: MarketTrend.BEARISH,momentum: MomentumStrength.STRONG_BEARISH,},
+  };
+
+  it('produces LONG signal when parameters are omitted', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {}});
+    expect(r.producedSignal).toBe(true);
+    expect(r.signal?.direction).toBe(StrategySignalDirection.LONG);
+    expect(r.signal?.confidence).toBe(74);
+  });
+
+  it('produces LONG signal when confidence meets threshold', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 60}});
+    expect(r.producedSignal).toBe(true);
+    expect(r.signal?.direction).toBe(StrategySignalDirection.LONG);
+    expect(r.signal?.confidence).toBe(74);
+  });
+
+  it('produces SHORT signal when confidence meets threshold', () => {
+    const r = evaluateStrategy({...bearishInput, parameters: {minimumConfidence: 60}});
+    expect(r.producedSignal).toBe(true);
+    expect(r.signal?.direction).toBe(StrategySignalDirection.SHORT);
+    expect(r.signal?.confidence).toBe(74);
+  });
+
+  it('produces NO_SIGNAL when confidence below threshold', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 80}});
+    expect(r.producedSignal).toBe(false);
+    expect(r.signal).toBeNull();
+    expect(r.metadata?.reason).toContain('confidence below threshold');
+  });
+
+  it('uses default minimumConfidence when missing', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {otherParam: 'value'}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('falls back to default for wrong type', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 'bad' as never}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('falls back to default for NaN', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: NaN}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('falls back to default for Infinity', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: Infinity}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('falls back to default for negative', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: -50}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('falls back to default exceeds 100', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 150}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('identical inputs produce identical results', () => {
+    const i1 = {...bullishInput, parameters: {minimumConfidence: 70}};
+    const i2 = {...bullishInput, parameters: {minimumConfidence: 70}};
+    const r1 = evaluateStrategy(i1);
+    const r2 = evaluateStrategy(i2);
+    expect(r1).toEqual(r2);
+  });
+
+  it('does not mutate parameters', () => {
+    const params = {minimumConfidence: 70};
+    const before = JSON.stringify(params);
+    evaluateStrategy({...bullishInput, parameters: params});
+    expect(JSON.stringify(params)).toBe(before);
+  });
+
+  it('preserves strategy identity', () => {
+    const r1 = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 60}});
+    const r2 = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 90}});
+    expect(r1.strategyId).toBe(r2.strategyId);
+    expect(r1.strategyVersionId).toBe(r2.strategyVersionId);
+  });
+
+  it('preserves opportunity metadata', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 60}});
+    expect(r.metadata?.strategyParameters).toBeDefined();
+  });
+
+  it('no lifecycle objects created', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 80}});
+    expect(r).not.toHaveProperty('order');
+    expect(r).not.toHaveProperty('trade');
+    expect(r).not.toHaveProperty('tradeProposal');
+  });
+
+  it('STRONG_BULLISH with high threshold', () => {
+    const r = evaluateStrategy({...strongBullishInput, parameters: {minimumConfidence: 85}});
+    expect(r.producedSignal).toBe(true);
+    expect(r.signal?.confidence).toBe(85);
+  });
+
+  it('STRONG_BEARISH with high threshold', () => {
+    const r = evaluateStrategy({...strongBearishInput, parameters: {minimumConfidence: 85}});
+    expect(r.producedSignal).toBe(true);
+    expect(r.signal?.confidence).toBe(85);
+  });
+
+  it('confidence exactly at threshold', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 74}});
+    expect(r.producedSignal).toBe(true);
+  });
+
+  it('confidence 1 below threshold', () => {
+    const r = evaluateStrategy({...bullishInput, parameters: {minimumConfidence: 75}});
+    expect(r.producedSignal).toBe(false);
+  });
+});
 });

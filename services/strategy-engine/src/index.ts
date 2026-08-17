@@ -17,6 +17,44 @@ export const TREND_FOLLOWING_STRATEGY_ID = 'trend-following';
 export const TREND_FOLLOWING_STRATEGY_VERSION = 'v1.0.0';
 export const TREND_FOLLOWING_STRATEGY_VERSION_ID = `${TREND_FOLLOWING_STRATEGY_ID}-${TREND_FOLLOWING_STRATEGY_VERSION}`;
 
+// Default parameters for the trend-following strategy
+const DEFAULT_MINIMUM_CONFIDENCE = 60;
+
+/**
+ * Extract and validate minimumConfidence parameter from StrategyParameters.
+ * Returns a deterministic default if:
+ * - parameter is missing
+ * - parameter is not a number
+ * - parameter is NaN or Infinity
+ * - parameter is outside valid range [0, 100]
+ */
+function getMinimumConfidenceThreshold(
+  parameters: StrategyParameters | undefined
+): number {
+  if (!parameters || typeof parameters !== 'object') {
+    return DEFAULT_MINIMUM_CONFIDENCE;
+  }
+
+  const rawValue = parameters['minimumConfidence'];
+
+  if (rawValue === null || rawValue === undefined) {
+    return DEFAULT_MINIMUM_CONFIDENCE;
+  }
+
+  const numValue = typeof rawValue === 'number' ? rawValue : null;
+
+  if (
+    numValue === null ||
+    !Number.isFinite(numValue) ||
+    numValue < 0 ||
+    numValue > 100
+  ) {
+    return DEFAULT_MINIMUM_CONFIDENCE;
+  }
+
+  return Math.round(numValue);
+}
+
 function getStrategyIdentity(input: StrategyEvaluationInput) {
   const strategyId =
     input.strategyVersion?.strategyId ??
@@ -80,8 +118,9 @@ function buildSignal(
   strategyId: string,
   strategyVersionId: string | null,
   strategyVersion: string,
-  rationale: string
-): StrategySignal {
+  rationale: string,
+  minimumConfidence: number
+): StrategySignal | null {
   const confidence =
     direction === StrategySignalDirection.LONG
       ? input.marketState?.momentum === MomentumStrength.STRONG_BULLISH
@@ -90,6 +129,11 @@ function buildSignal(
       : input.marketState?.momentum === MomentumStrength.STRONG_BEARISH
         ? 85
         : 74;
+
+  // Check if confidence meets the threshold
+  if (confidence < minimumConfidence) {
+    return null;
+  }
 
   return {
     id: `${strategyId}-${input.symbol}-${input.timeframe}-${direction.toLowerCase()}`,
@@ -110,10 +154,10 @@ function buildSignal(
 }
 
 /**
- * Minimal deterministic trend-following strategy.
- * Long requires bullish trend + confirming bullish momentum.
- * Short requires bearish trend + confirming bearish momentum.
- * Any disagreement, neutral state, or insufficient market information produces NO_SIGNAL.
+ * Minimal deterministic trend-following strategy with configurable minimumConfidence parameter.
+ * Long requires bullish trend + confirming bullish momentum, with confidence >= minimumConfidence.
+ * Short requires bearish trend + confirming bearish momentum, with confidence >= minimumConfidence.
+ * Any disagreement, neutral state, insufficient market information, or confidence below threshold produces NO_SIGNAL.
  */
 export function evaluateStrategy(
   input: StrategyEvaluationInput
@@ -121,6 +165,7 @@ export function evaluateStrategy(
   const { strategyId, strategyVersionId, strategyVersion } =
     getStrategyIdentity(input);
   const marketState = input.marketState;
+  const minimumConfidence = getMinimumConfidenceThreshold(input.parameters);
 
   if (!marketState) {
     return buildNoSignalResult(
@@ -168,8 +213,19 @@ export function evaluateStrategy(
       strategyId,
       strategyVersionId,
       strategyVersion,
-      'Trend and momentum confirm bullish conditions.'
+      'Trend and momentum confirm bullish conditions.',
+      minimumConfidence
     );
+
+    if (!signal) {
+      return buildNoSignalResult(
+        input,
+        `Bullish conditions detected but confidence below threshold (${minimumConfidence}).`,
+        strategyId,
+        strategyVersionId,
+        strategyVersion
+      );
+    }
 
     return {
       strategyId,
@@ -197,8 +253,19 @@ export function evaluateStrategy(
       strategyId,
       strategyVersionId,
       strategyVersion,
-      'Trend and momentum confirm bearish conditions.'
+      'Trend and momentum confirm bearish conditions.',
+      minimumConfidence
     );
+
+    if (!signal) {
+      return buildNoSignalResult(
+        input,
+        `Bearish conditions detected but confidence below threshold (${minimumConfidence}).`,
+        strategyId,
+        strategyVersionId,
+        strategyVersion
+      );
+    }
 
     return {
       strategyId,
