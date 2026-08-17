@@ -1,0 +1,27 @@
+{
+  "name": "@forex-platform/strategy-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "prebuild": "npm --workspace @forex-platform/types run build",
+    "build": "tsc",
+    "pretypecheck": "npm --workspace @forex-platform/types run build",
+    "test": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@forex-platform/types": "file:../../packages/types"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^7.17.0",
+    "@typescript-eslint/parser": "^7.17.0",
+    "eslint": "^8.57.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  }
+}

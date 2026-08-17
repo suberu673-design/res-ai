@@ -924,6 +924,89 @@ export interface ErrorResponse {
 }
 
 /**
+ * Strategy parameter values deliberately kept to JSON-safe primitives and nested maps.
+ * This keeps the contract compatible with the persisted StrategyVersion.parameters Json field
+ * without introducing a heavy generic configuration system.
+ */
+export type StrategyParameterValue =
+  | string
+  | number
+  | boolean
+  | null
+  | StrategyParameterValue[]
+  | { [key: string]: StrategyParameterValue };
+
+export interface StrategyParameters {
+  [key: string]: StrategyParameterValue;
+}
+
+/**
+ * Strategy evaluation input - canonical deterministic context for a future strategy engine.
+ * This intentionally excludes account, broker, order, and execution state.
+ */
+export interface StrategyEvaluationInput {
+  symbol: string;
+  timeframe: string;
+  marketState: Partial<MarketState> | null;
+  tradingMode: TradingMode;
+  tradingStyle?: TradingStyle | null;
+  strategyId?: string | null;
+  strategyVersion?: Pick<
+    StrategyVersion,
+    | 'id'
+    | 'strategyId'
+    | 'version'
+    | 'name'
+    | 'status'
+    | 'parameters'
+    | 'createdAt'
+    | 'updatedAt'
+  > | null;
+  parameters: StrategyParameters;
+}
+
+/**
+ * Strategy signal direction - a decision signal only, not an order or trade instruction.
+ */
+export enum StrategySignalDirection {
+  LONG = 'LONG',
+  SHORT = 'SHORT',
+  NEUTRAL = 'NEUTRAL',
+}
+
+/**
+ * Strategy signal returned by a future Strategy Engine.
+ * This is an output contract, not a broker or order representation.
+ */
+export interface StrategySignal {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  direction: StrategySignalDirection;
+  confidence: number;
+  rationale: string[];
+  strategyId?: string | null;
+  strategyVersionId?: string | null;
+  evaluatedAt?: Date | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Evaluation result returned by a future Strategy Engine.
+ * It can represent either a valid signal or a deliberate no-signal outcome.
+ */
+export interface StrategyEvaluationResult {
+  strategyId: string;
+  strategyVersionId?: string | null;
+  symbol: string;
+  timeframe: string;
+  tradingMode: TradingMode;
+  producedSignal: boolean;
+  signal: StrategySignal | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
  * AI Assessment - how the analyst views the setup
  */
 export enum AIAssessment {

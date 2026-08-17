@@ -5,6 +5,11 @@ import {
   MarketTrend,
   MomentumStrength,
   OperatingMode,
+  StrategyEvaluationInput,
+  StrategyEvaluationResult,
+  StrategyParameters,
+  StrategySignal,
+  StrategySignalDirection,
   TradeDirection,
   TradeStatus,
   TradingMode,
@@ -270,6 +275,135 @@ describe('Shared Types', () => {
       expect(isValidAIAnalysisTransition('DRAFT', 'ANALYZED')).toBe(true);
       expect(isValidAIAnalysisTransition('ANALYZED', 'ARCHIVED')).toBe(true);
       expect(isValidAIAnalysisTransition('ARCHIVED', 'DRAFT')).toBe(false);
+    });
+  });
+
+  describe('M8 strategy contracts', () => {
+    it('should represent a valid strategy evaluation input', () => {
+      const parameters: StrategyParameters = {
+        minConfidence: 65,
+        allowCounterTrend: false,
+        filters: {
+          minMomentum: 0.6,
+          requireSupport: true,
+        },
+      };
+
+      const input: StrategyEvaluationInput = {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        tradingMode: TradingMode.SWING,
+        tradingStyle: TradingStyle.SWING,
+        marketState: {
+          symbol: 'EURUSD',
+          timeframe: '4h',
+          timestamp: new Date(),
+          trend: MarketTrend.BULLISH,
+          momentum: MomentumStrength.BULLISH,
+          volatility: 'NORMAL' as never,
+          marketStructure: 'HIGHER_HIGHS' as never,
+          supportLevels: [],
+          resistanceLevels: [],
+          indicators: {
+            rsi: 58,
+            ema20: 1.08,
+            ema50: 1.06,
+            ema100: 1.05,
+            ema200: 1.02,
+            macd: 0.001,
+            signal: 0.0008,
+            histogram: 0.0002,
+            atr: 0.001,
+            adx: 25,
+            roc: 0.5,
+            bollingerBands: null,
+            valid: true,
+            dataStatus: 'ok',
+            source: 'mock',
+          },
+          source: 'mock',
+          dataStatus: 'ok',
+        },
+        parameters,
+        strategyVersion: {
+          id: 'strategy-version-001',
+          strategyId: 'strategy-001',
+          version: 'v1.0.0',
+          name: 'Momentum Bias v1',
+          status: 'ACTIVE',
+          parameters,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      };
+
+      expect(input.symbol).toBe('EURUSD');
+      expect(input.tradingMode).toBe(TradingMode.SWING);
+      expect(input.parameters.minConfidence).toBe(65);
+      expect(input.strategyVersion?.version).toBe('v1.0.0');
+    });
+
+    it('should support strategy signals and no-signal evaluation results', () => {
+      const signal: StrategySignal = {
+        id: 'signal-1',
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        direction: StrategySignalDirection.LONG,
+        confidence: 76,
+        rationale: [
+          'Trend remains constructive',
+          'Momentum remains supportive',
+        ],
+        strategyId: 'strategy-001',
+        strategyVersionId: 'strategy-version-001',
+        evaluatedAt: new Date(),
+      };
+
+      const resultWithSignal: StrategyEvaluationResult = {
+        strategyId: 'strategy-001',
+        strategyVersionId: 'strategy-version-001',
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        tradingMode: TradingMode.SWING,
+        producedSignal: true,
+        signal,
+        metadata: {
+          inputChecksum: 'hash-123',
+        },
+      };
+
+      const resultWithoutSignal: StrategyEvaluationResult = {
+        strategyId: 'strategy-001',
+        strategyVersionId: 'strategy-version-001',
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        tradingMode: TradingMode.SWING,
+        producedSignal: false,
+        signal: null,
+        metadata: {
+          reason: 'No clear entry condition met',
+        },
+      };
+
+      expect(signal.direction).toBe(StrategySignalDirection.LONG);
+      expect(resultWithSignal.producedSignal).toBe(true);
+      expect(resultWithoutSignal.signal).toBeNull();
+    });
+
+    it('should keep strategy parameters type-safe and not break M7 lifecycle contracts', () => {
+      const parameters: StrategyParameters = {
+        minConfidence: 70,
+        threshold: 1.2,
+        enabled: true,
+        filters: {
+          requireBreakout: false,
+        },
+      };
+
+      expect(parameters.minConfidence).toBe(70);
+      expect(parameters.enabled).toBe(true);
+      expect(isValidTradeProposalTransition('DRAFT', 'ANALYZED')).toBe(true);
+      expect(isValidRiskDecisionTransition('PENDING', 'PASS')).toBe(true);
     });
   });
 });
