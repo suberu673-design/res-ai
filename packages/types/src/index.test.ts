@@ -13,6 +13,12 @@ import {
   getTradingModeConfiguration,
   isModeCompatibleWithMarketState,
   isTimeframeCompatible,
+  isValidAIAnalysisTransition,
+  isValidOrderTransition,
+  isValidPositionTransition,
+  isValidRiskDecisionTransition,
+  isValidTradeProposalTransition,
+  isValidTradeTransition,
   validateModeContext,
 } from './index';
 
@@ -230,6 +236,40 @@ describe('Shared Types', () => {
           dataStatus: 'no_data',
         } as never)
       ).toBe(false);
+    });
+  });
+
+  describe('M7 lifecycle state machines', () => {
+    it('should allow valid M7 proposal transitions and reject invalid ones', () => {
+      expect(isValidTradeProposalTransition('DRAFT', 'ANALYZED')).toBe(true);
+      expect(isValidTradeProposalTransition('ANALYZED', 'RISK_PENDING')).toBe(
+        true
+      );
+      expect(isValidTradeProposalTransition('RISK_PENDING', 'APPROVED')).toBe(
+        true
+      );
+      expect(isValidTradeProposalTransition('DRAFT', 'APPROVED')).toBe(false);
+    });
+
+    it('should allow valid risk and order transitions and reject invalid ones', () => {
+      expect(isValidRiskDecisionTransition('PENDING', 'PASS')).toBe(true);
+      expect(isValidRiskDecisionTransition('PENDING', 'FAIL')).toBe(true);
+      expect(isValidRiskDecisionTransition('PASS', 'PENDING')).toBe(false);
+      expect(isValidOrderTransition('PENDING', 'SUBMITTED')).toBe(true);
+      expect(isValidOrderTransition('SUBMITTED', 'FILLED')).toBe(true);
+      expect(isValidOrderTransition('PENDING', 'FILLED')).toBe(false);
+    });
+
+    it('should allow valid trade and position transitions and reject invalid ones', () => {
+      expect(isValidTradeTransition('PROPOSED', 'OPEN')).toBe(true);
+      expect(isValidTradeTransition('OPEN', 'CLOSED')).toBe(true);
+      expect(isValidTradeTransition('CLOSED', 'OPEN')).toBe(false);
+      expect(isValidPositionTransition('OPEN', 'PARTIALLY_CLOSED')).toBe(true);
+      expect(isValidPositionTransition('OPEN', 'LIQUIDATED')).toBe(true);
+      expect(isValidPositionTransition('LIQUIDATED', 'OPEN')).toBe(false);
+      expect(isValidAIAnalysisTransition('DRAFT', 'ANALYZED')).toBe(true);
+      expect(isValidAIAnalysisTransition('ANALYZED', 'ARCHIVED')).toBe(true);
+      expect(isValidAIAnalysisTransition('ARCHIVED', 'DRAFT')).toBe(false);
     });
   });
 });

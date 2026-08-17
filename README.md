@@ -9,15 +9,40 @@ The AI Forex Platform is designed to:
 - **Scan** forex markets continuously for opportunities
 - **Analyze** technical and macro conditions
 - **Discover** trading opportunities across multiple timeframes
-- **Execute** trades with multiple operating modes (Scout, Analyst, Paper Trading, Human Approval, Autonomous)
-- **Manage** positions with risk controls
+- **Persist** the lifecycle contracts required for proposal, approval, order, position, trade, and journal tracking
 - **Log** every AI decision for auditability
-- **Backtest** strategies on historical data
-- **Learn** through controlled strategy evolution
+- **Prepare** the platform for later execution and strategy automation without implementing them in M7
 
-Currently in **M2 (Market Data Foundation)** — establishing a provider-based market-data layer, forex market endpoints, and a safe mock/live provider model without building the trading engine.
+## 📦 Current Milestone: M7 — Trading Architecture Foundation
 
-## 📦 Current Milestone: M2 — Market Data Foundation
+M7 creates the durable contracts required for:
+
+Market → Intelligence → Opportunity → AI Analysis → Trade Proposal → Risk Decision → Approval → Order → Position → Trade → Journal → Post-Trade Analysis
+
+### M7 implements
+
+- lifecycle contracts and state machines
+- persisted AI analysis history
+- trade proposal persistence
+- risk decision records
+- strategy version metadata
+- journal and execution event records
+- minimal lifecycle API endpoints
+- validation guards for valid/invalid transitions
+
+### M7 does not implement
+
+- Strategy Engine
+- strategy signal generation
+- Risk Engine logic
+- Paper Broker
+- broker execution
+- autonomous trading
+- live trading
+- backtesting
+- strategy optimization
+
+## 📦 Architecture Scope
 
 ### Current Capabilities
 
@@ -43,12 +68,9 @@ Currently in **M2 (Market Data Foundation)** — establishing a provider-based m
 
 ### Upcoming Milestones
 
-- M3 — Trading Engine
-- M4 — AI Services
-- M5 — Risk Management
-- M6 — Backtesting
-- M7 — Flutter Mobile App
-- M8 — Broker Integration
+- M7 — Trading Architecture Foundation (current milestone)
+- M8 — Strategy/Execution Expansion (not implemented in this branch)
+- M9+ — Advanced execution, strategy engine, and broker integration work (future)
 
 ## 🏗️ Repository Structure
 
@@ -93,33 +115,39 @@ Currently in **M2 (Market Data Foundation)** — establishing a provider-based m
 ### Setup (First Time)
 
 1. **Clone the repository** (or open in GitHub Codespaces):
+
    ```bash
    git clone <repo-url>
    cd ai-forex-platform
    ```
 
 2. **Copy environment file**:
+
    ```bash
    cp .env.example .env
    ```
 
 3. **Install dependencies**:
+
    ```bash
    npm install
    ```
 
 4. **Start the database** (required for the API health check to pass):
+
    ```bash
    npm run db:up
    ```
 
 5. **Run migrations and seed data**:
+
    ```bash
    npm run db:migrate
    npm run db:seed
    ```
 
 6. **Start the development environment**:
+
    ```bash
    # Terminal 1: Start the API server
    cd services/api && npm run dev
@@ -251,11 +279,13 @@ The project uses **PostgreSQL 16** running in Docker Compose.
 ### Database Health
 
 Verify the database is running:
+
 ```bash
 npm run db:health
 ```
 
 Should output:
+
 ```
 accepting connections
 ```
@@ -263,6 +293,7 @@ accepting connections
 ### Inspecting the Database
 
 Open Prisma Studio to visualize and edit data:
+
 ```bash
 npm run db:studio
 ```
@@ -296,6 +327,7 @@ This compiles all packages and applications.
 ## 📚 Architecture Overview
 
 See [docs/architecture.md](docs/architecture.md) for:
+
 - High-level system design
 - Service boundaries
 - Database schema
@@ -305,6 +337,7 @@ See [docs/architecture.md](docs/architecture.md) for:
 ## 📖 Development Rules
 
 See [docs/development-rules.md](docs/development-rules.md) for:
+
 - No hardcoded secrets rule
 - Frontend is always a client rule
 - Financial calculation guidelines
@@ -350,11 +383,13 @@ BROKER_SECRET=placeholder_broker_secret
 ### Database Connection Failed
 
 1. Check if PostgreSQL is running:
+
    ```bash
    npm run db:health
    ```
 
 2. If not running, start it:
+
    ```bash
    npm run db:up
    ```
@@ -369,10 +404,11 @@ BROKER_SECRET=placeholder_broker_secret
 If port 5432 (database) or 3000/3001 are already in use:
 
 1. Find and kill the process:
+
    ```bash
    # Find process on port 5432
    lsof -i :5432
-   
+
    # Kill it (replace PID with actual process ID)
    kill -9 <PID>
    ```
@@ -382,6 +418,7 @@ If port 5432 (database) or 3000/3001 are already in use:
 ### Migrations Failed
 
 Reset the database and rerun migrations:
+
 ```bash
 npm run db:reset
 npm run db:migrate
@@ -391,6 +428,7 @@ npm run db:seed
 ### npm Dependencies Issue
 
 Clear and reinstall:
+
 ```bash
 rm -rf node_modules package-lock.json
 npm install
@@ -419,6 +457,7 @@ This is not yet ready for production. Deployment guidelines will be added in fut
 ## 📞 Support
 
 For issues or questions:
+
 1. Check [docs/development-rules.md](docs/development-rules.md)
 2. Check [docs/architecture.md](docs/architecture.md)
 3. Run health checks: `npm run db:health`

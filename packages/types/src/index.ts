@@ -29,14 +29,80 @@ export enum TradeDirection {
 }
 
 /**
+ * Trade proposal lifecycle state
+ */
+export enum TradeProposalStatus {
+  DRAFT = 'DRAFT',
+  ANALYZED = 'ANALYZED',
+  RISK_PENDING = 'RISK_PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+}
+
+/**
+ * Risk decision lifecycle state
+ */
+export enum RiskDecisionStatus {
+  PENDING = 'PENDING',
+  PASS = 'PASS',
+  FAIL = 'FAIL',
+  OVERRIDE_REQUIRED = 'OVERRIDE_REQUIRED',
+  BLOCKED = 'BLOCKED',
+}
+
+/**
+ * Approval lifecycle state for future human approval workflows
+ */
+export enum ApprovalStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  OVERRIDE_REQUIRED = 'OVERRIDE_REQUIRED',
+}
+
+/**
+ * Order lifecycle status
+ */
+export enum OrderStatus {
+  PENDING = 'PENDING',
+  SUBMITTED = 'SUBMITTED',
+  PARTIALLY_FILLED = 'PARTIALLY_FILLED',
+  FILLED = 'FILLED',
+  CANCELLED = 'CANCELLED',
+  REJECTED = 'REJECTED',
+  FAILED = 'FAILED',
+}
+
+/**
+ * Position lifecycle status
+ */
+export enum PositionStatus {
+  OPEN = 'OPEN',
+  PARTIALLY_CLOSED = 'PARTIALLY_CLOSED',
+  CLOSED = 'CLOSED',
+  LIQUIDATED = 'LIQUIDATED',
+}
+
+/**
  * Trade status - lifecycle of a trade
  */
 export enum TradeStatus {
   PROPOSED = 'PROPOSED',
   OPEN = 'OPEN',
+  PARTIALLY_CLOSED = 'PARTIALLY_CLOSED',
   CLOSED = 'CLOSED',
   CANCELLED = 'CANCELLED',
   REJECTED = 'REJECTED',
+}
+
+/**
+ * AI analysis lifecycle status
+ */
+export enum AIAnalysisStatus {
+  DRAFT = 'DRAFT',
+  ANALYZED = 'ANALYZED',
+  ARCHIVED = 'ARCHIVED',
 }
 
 /**
@@ -733,6 +799,118 @@ export function buildTradingContext({
   return context;
 }
 
+export function isValidTradeProposalTransition(
+  from: string,
+  to: string
+): boolean {
+  const valid: Record<string, string[]> = {
+    [TradeProposalStatus.DRAFT]: [TradeProposalStatus.ANALYZED],
+    [TradeProposalStatus.ANALYZED]: [
+      TradeProposalStatus.RISK_PENDING,
+      TradeProposalStatus.EXPIRED,
+    ],
+    [TradeProposalStatus.RISK_PENDING]: [
+      TradeProposalStatus.APPROVED,
+      TradeProposalStatus.REJECTED,
+      TradeProposalStatus.EXPIRED,
+    ],
+    [TradeProposalStatus.APPROVED]: [],
+    [TradeProposalStatus.REJECTED]: [],
+    [TradeProposalStatus.EXPIRED]: [],
+  };
+
+  return valid[from]?.includes(to) ?? false;
+}
+
+export function isValidRiskDecisionTransition(
+  from: string,
+  to: string
+): boolean {
+  const valid: Record<string, string[]> = {
+    [RiskDecisionStatus.PENDING]: [
+      RiskDecisionStatus.PASS,
+      RiskDecisionStatus.FAIL,
+      RiskDecisionStatus.OVERRIDE_REQUIRED,
+      RiskDecisionStatus.BLOCKED,
+    ],
+    [RiskDecisionStatus.PASS]: [],
+    [RiskDecisionStatus.FAIL]: [],
+    [RiskDecisionStatus.OVERRIDE_REQUIRED]: [],
+    [RiskDecisionStatus.BLOCKED]: [],
+  };
+
+  return valid[from]?.includes(to) ?? false;
+}
+
+export function isValidOrderTransition(from: string, to: string): boolean {
+  const valid: Record<string, string[]> = {
+    [OrderStatus.PENDING]: [OrderStatus.SUBMITTED, OrderStatus.CANCELLED],
+    [OrderStatus.SUBMITTED]: [
+      OrderStatus.PARTIALLY_FILLED,
+      OrderStatus.FILLED,
+      OrderStatus.CANCELLED,
+      OrderStatus.REJECTED,
+      OrderStatus.FAILED,
+    ],
+    [OrderStatus.PARTIALLY_FILLED]: [
+      OrderStatus.FILLED,
+      OrderStatus.CANCELLED,
+      OrderStatus.FAILED,
+    ],
+    [OrderStatus.FILLED]: [],
+    [OrderStatus.CANCELLED]: [],
+    [OrderStatus.REJECTED]: [],
+    [OrderStatus.FAILED]: [],
+  };
+
+  return valid[from]?.includes(to) ?? false;
+}
+
+export function isValidPositionTransition(from: string, to: string): boolean {
+  const valid: Record<string, string[]> = {
+    [PositionStatus.OPEN]: [
+      PositionStatus.PARTIALLY_CLOSED,
+      PositionStatus.CLOSED,
+      PositionStatus.LIQUIDATED,
+    ],
+    [PositionStatus.PARTIALLY_CLOSED]: [
+      PositionStatus.CLOSED,
+      PositionStatus.LIQUIDATED,
+    ],
+    [PositionStatus.CLOSED]: [],
+    [PositionStatus.LIQUIDATED]: [],
+  };
+
+  return valid[from]?.includes(to) ?? false;
+}
+
+export function isValidTradeTransition(from: string, to: string): boolean {
+  const valid: Record<string, string[]> = {
+    [TradeStatus.PROPOSED]: [TradeStatus.OPEN, TradeStatus.CANCELLED],
+    [TradeStatus.OPEN]: [
+      TradeStatus.PARTIALLY_CLOSED,
+      TradeStatus.CLOSED,
+      TradeStatus.CANCELLED,
+    ],
+    [TradeStatus.PARTIALLY_CLOSED]: [TradeStatus.CLOSED],
+    [TradeStatus.CLOSED]: [],
+    [TradeStatus.CANCELLED]: [],
+    [TradeStatus.REJECTED]: [],
+  };
+
+  return valid[from]?.includes(to) ?? false;
+}
+
+export function isValidAIAnalysisTransition(from: string, to: string): boolean {
+  const valid: Record<string, string[]> = {
+    [AIAnalysisStatus.DRAFT]: [AIAnalysisStatus.ANALYZED],
+    [AIAnalysisStatus.ANALYZED]: [AIAnalysisStatus.ARCHIVED],
+    [AIAnalysisStatus.ARCHIVED]: [],
+  };
+
+  return valid[from]?.includes(to) ?? false;
+}
+
 /**
  * API Error Response
  */
@@ -796,6 +974,99 @@ export interface AIAnalysis {
   provider: string;
   marketDataMode: 'LIVE' | 'MOCK';
   opportunityScore: number | null;
+}
+
+export interface StrategyVersion {
+  id: string;
+  strategyId: string;
+  version: string;
+  name?: string | null;
+  parameters?: Record<string, unknown> | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AIAnalysisHistory {
+  id: string;
+  opportunityId?: string | null;
+  symbol: string;
+  direction?: string | null;
+  tradingMode?: string | null;
+  timeframe?: string | null;
+  assessment?: string | null;
+  confidence?: number | null;
+  summary?: string | null;
+  reasons?: string[] | null;
+  risks?: string[] | null;
+  invalidationConditions?: string[] | null;
+  provider?: string | null;
+  model?: string | null;
+  sourceContext?: Record<string, unknown> | null;
+  analyzedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TradeProposal {
+  id: string;
+  opportunityId?: string | null;
+  aiAnalysisId?: string | null;
+  strategyId?: string | null;
+  strategyVersionId?: string | null;
+  symbol: string;
+  tradingMode?: string | null;
+  tradingStyle?: string | null;
+  direction: string;
+  proposedEntryPrice?: number | null;
+  proposedStopPrice?: number | null;
+  proposedTargetPrice?: number | null;
+  riskRewardRatio?: number | null;
+  confidence?: number | null;
+  thesis?: string | null;
+  invalidationConditions?: string[] | null;
+  status: TradeProposalStatus;
+  approvalStatus?: ApprovalStatus | null;
+  approvedBy?: string | null;
+  approvedAt?: Date | null;
+  rejectedReason?: string | null;
+  expiresAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RiskDecision {
+  id: string;
+  tradeProposalId: string;
+  status: RiskDecisionStatus;
+  evaluatedAt?: Date | null;
+  reason?: string | null;
+  riskFlags?: Record<string, unknown> | null;
+  evaluator?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface JournalEvent {
+  id: string;
+  tradeId?: string | null;
+  tradeProposalId?: string | null;
+  eventType: string;
+  message?: string | null;
+  metadata?: Record<string, unknown> | null;
+  timestamp: Date;
+  createdAt: Date;
+}
+
+export interface ExecutionEvent {
+  id: string;
+  orderId?: string | null;
+  tradeId?: string | null;
+  tradeProposalId?: string | null;
+  eventType: string;
+  metadata?: Record<string, unknown> | null;
+  timestamp: Date;
+  createdAt: Date;
 }
 
 /**

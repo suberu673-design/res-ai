@@ -4,6 +4,10 @@
   "description": "Database schema and migrations",
   "private": true,
   "scripts": {
+    "build": "echo \"Database package is schema-only; Prisma validation is done with prisma validate and generate.\"",
+    "lint": "echo \"Database package has no lintable TypeScript source.\"",
+    "typecheck": "echo \"Database package has no TypeScript build target.\"",
+    "test": "echo \"Database package has no dedicated test suite; lifecycle validation is covered in the shared types package.\"",
     "migrate:dev": "prisma migrate dev --name init",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:reset": "prisma migrate reset --force",

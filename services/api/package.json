@@ -6,8 +6,10 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "npm --workspace @forex-platform/types run build",
     "dev": "node --env-file ../../.env --import tsx --watch src/index.ts",
     "build": "tsc",
+    "pretypecheck": "npm --workspace @forex-platform/types run build",
     "start": "node --env-file ../../.env dist/index.js",
     "test": "vitest",
     "lint": "eslint src --ext .ts",

@@ -83,15 +83,85 @@ async function main() {
     },
   ];
 
+  const createdStrategies: Record<string, { id: string }> = {};
   for (const strategy of strategies) {
-    await prisma.strategy.upsert({
+    const created = await prisma.strategy.upsert({
       where: { name: strategy.name },
       update: {},
       create: strategy,
     });
+    createdStrategies[strategy.name] = { id: created.id };
+  }
+
+  for (const strategyName of Object.keys(createdStrategies)) {
+    await prisma.strategyVersion.upsert({
+      where: {
+        id: `strategy-version-${strategyName.toLowerCase().replace(/\s+/g, '-')}`,
+      },
+      update: {},
+      create: {
+        id: `strategy-version-${strategyName.toLowerCase().replace(/\s+/g, '-')}`,
+        strategyId: createdStrategies[strategyName].id,
+        version: 'v1.0.0',
+        name: `${strategyName} v1`,
+        parameters: {
+          mode: 'M7_FOUNDATION',
+          notes: 'Version metadata for future strategy engine work',
+        },
+        status: 'ACTIVE',
+      },
+    });
   }
 
   console.log('✓ Strategies seeded');
+
+  const strategy = await prisma.strategy.findFirst({
+    where: { name: 'Swing Trade Pro' },
+    include: { versions: true },
+  });
+
+  if (strategy?.versions?.[0]) {
+    const aiHistory = await prisma.aiAnalysisHistory.create({
+      data: {
+        symbol: 'EUR/USD',
+        tradingMode: 'SWING',
+        timeframe: '4h',
+        direction: 'LONG',
+        assessment: 'FAVORABLE',
+        confidence: 74,
+        summary: 'M7 foundation analysis generated for lifecycle audit trail.',
+        reasons: [
+          'Trend aligned with longer timeframe structure',
+          'Opportunity is suitable for proposal tracking',
+        ],
+        risks: ['Mock-only environment'],
+        invalidationConditions: ['Price falls below support'],
+        provider: 'mock',
+        model: 'mock-analyst-v1',
+        marketDataMode: 'MOCK',
+        sourceContext: { milestone: 'M7', generatedBy: 'seed' },
+        analyzedAt: new Date(),
+      },
+    });
+
+    await prisma.tradeProposal.create({
+      data: {
+        symbol: 'EUR/USD',
+        direction: 'LONG',
+        tradingMode: 'SWING',
+        tradingStyle: 'SWING',
+        strategyId: strategy.id,
+        strategyVersionId: strategy.versions[0].id,
+        aiAnalysisId: aiHistory.id,
+        thesis:
+          'Seeded M7 proposal to verify the lifecycle foundation without execution.',
+        status: 'DRAFT',
+        approvalStatus: 'PENDING',
+      },
+    });
+
+    console.log('✓ M7 lifecycle seed data created');
+  }
 
   // Seed demo user
   const user = await prisma.user.upsert({

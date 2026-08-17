@@ -6,7 +6,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "prebuild": "npm --workspace @forex-platform/types run build",
     "build": "tsc",
+    "pretypecheck": "npm --workspace @forex-platform/types run build",
     "test": "vitest",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"

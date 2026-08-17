@@ -94,7 +94,112 @@ model Strategy {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  versions       StrategyVersion[]
+  tradeProposals TradeProposal[]
+
   @@map("strategies")
+}
+
+model StrategyVersion {
+  id         String   @id @default(cuid())
+  strategyId String
+  version    String
+  name       String?
+  parameters Json?
+  status     String   @default("DRAFT") // DRAFT, ACTIVE, ARCHIVED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  strategy        Strategy         @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  tradeProposals  TradeProposal[]
+
+  @@index([strategyId])
+  @@map("strategy_versions")
+}
+
+model AIAnalysisHistory {
+  id                    String   @id @default(cuid())
+  opportunityId         String?
+  symbol                String
+  tradingMode           String?
+  timeframe             String?
+  direction             String?
+  assessment            String?
+  confidence            Float?
+  summary               String?
+  reasons               Json?
+  risks                 Json?
+  invalidationConditions Json?
+  provider              String?
+  model                 String?
+  marketDataMode        String?
+  sourceContext         Json?
+  analyzedAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  proposals TradeProposal[]
+
+  @@index([symbol])
+  @@map("ai_analysis_history")
+}
+
+model TradeProposal {
+  id                     String    @id @default(cuid())
+  opportunityId          String?
+  aiAnalysisId           String?
+  strategyId             String?
+  strategyVersionId      String?
+  symbol                 String
+  tradingMode            String?
+  tradingStyle           String?
+  direction              String
+  proposedEntryPrice     Float?
+  proposedStopPrice      Float?
+  proposedTargetPrice    Float?
+  riskRewardRatio        Float?
+  confidence             Float?
+  thesis                 String?
+  invalidationConditions Json?
+  status                 String    @default("DRAFT") // DRAFT, ANALYZED, RISK_PENDING, APPROVED, REJECTED, EXPIRED
+  approvalStatus         String?
+  approvedBy             String?
+  approvedAt             DateTime?
+  rejectedReason         String?
+  expiresAt              DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  strategy          Strategy?           @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  strategyVersion   StrategyVersion?    @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+  aiAnalysisHistory AIAnalysisHistory?  @relation(fields: [aiAnalysisId], references: [id], onDelete: SetNull)
+  riskDecisions     RiskDecision[]
+  orders            Order[]
+  trades            Trade[]
+  journalEvents     JournalEvent[]
+  executionEvents   ExecutionEvent[]
+  positions         Position[]
+
+  @@index([status])
+  @@index([symbol])
+  @@map("trade_proposals")
+}
+
+model RiskDecision {
+  id             String    @id @default(cuid())
+  tradeProposalId String
+  status         String    @default("PENDING") // PENDING, PASS, FAIL, OVERRIDE_REQUIRED, BLOCKED
+  evaluatedAt    DateTime?
+  reason         String?
+  riskFlags      Json?
+  evaluator      String    @default("system")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tradeProposal TradeProposal @relation(fields: [tradeProposalId], references: [id], onDelete: Cascade)
+
+  @@index([tradeProposalId])
+  @@map("risk_decisions")
 }
 
 // Trade - record of a trade (completed or active)
@@ -102,67 +207,117 @@ model Trade {
   id                String   @id @default(cuid())
   accountId         String
   pairId            String
+  proposalId        String?
   direction         String   @default("LONG") // LONG or SHORT
   entryPrice        Float
   entryTime         DateTime
   exitPrice         Float?
   exitTime          DateTime?
   quantity          Float
-  status            String   @default("OPEN") // PROPOSED, OPEN, CLOSED, CANCELLED, REJECTED
+  status            String   @default("OPEN") // PROPOSED, OPEN, PARTIALLY_CLOSED, CLOSED, CANCELLED, REJECTED
   profitLoss        Float?
   profitLossPercent Float?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  pair    MarketPair     @relation(fields: [pairId], references: [id])
+  account      TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pair         MarketPair     @relation(fields: [pairId], references: [id])
+  tradeProposal TradeProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  journalEvents JournalEvent[]
+  executionEvents ExecutionEvent[]
 
   @@index([accountId])
   @@index([pairId])
+  @@index([proposalId])
   @@map("trades")
 }
 
 // Position - an active open position
 model Position {
-  id        String   @id @default(cuid())
-  accountId String
-  pairId    String
-  direction String   @default("LONG") // LONG or SHORT
+  id         String   @id @default(cuid())
+  accountId  String
+  pairId     String
+  proposalId String?
+  direction  String   @default("LONG") // LONG or SHORT
   entryPrice Float
-  entryTime DateTime
-  quantity  Float
-  status    String   @default("OPEN") // OPEN, CLOSED, CANCELLED
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  entryTime  DateTime
+  quantity   Float
+  status     String   @default("OPEN") // OPEN, PARTIALLY_CLOSED, CLOSED, LIQUIDATED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   pair    MarketPair     @relation(fields: [pairId], references: [id])
+  proposal TradeProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
 
   @@index([accountId])
   @@index([pairId])
+  @@index([proposalId])
   @@map("positions")
 }
 
 // Order - pending or executed orders
 model Order {
-  id        String   @id @default(cuid())
-  accountId String
-  pairId    String
-  direction String   @default("LONG") // LONG or SHORT
-  orderType String   @default("MARKET") // MARKET, LIMIT, STOP, STOP_LIMIT
-  quantity  Float
-  price     Float?
-  stopPrice Float?
-  status    String   @default("PENDING") // PENDING, EXECUTED, CANCELLED, REJECTED
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  accountId  String
+  pairId     String
+  proposalId String?
+  direction  String   @default("LONG") // LONG or SHORT
+  orderType  String   @default("MARKET") // MARKET, LIMIT, STOP, STOP_LIMIT
+  quantity   Float
+  price      Float?
+  stopPrice  Float?
+  status     String   @default("PENDING") // PENDING, SUBMITTED, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED, FAILED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   pair    MarketPair     @relation(fields: [pairId], references: [id])
+  tradeProposal TradeProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  executionEvents ExecutionEvent[]
 
   @@index([accountId])
   @@index([pairId])
+  @@index([proposalId])
   @@map("orders")
+}
+
+model JournalEvent {
+  id             String   @id @default(cuid())
+  tradeId        String?
+  tradeProposalId String?
+  eventType      String
+  message        String?
+  metadata       Json?
+  timestamp      DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  trade         Trade?         @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+  tradeProposal TradeProposal? @relation(fields: [tradeProposalId], references: [id], onDelete: SetNull)
+
+  @@index([tradeId])
+  @@index([tradeProposalId])
+  @@map("journal_events")
+}
+
+model ExecutionEvent {
+  id             String   @id @default(cuid())
+  orderId        String?
+  tradeId        String?
+  tradeProposalId String?
+  eventType      String
+  metadata       Json?
+  timestamp      DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  order         Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  trade         Trade?         @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+  tradeProposal TradeProposal? @relation(fields: [tradeProposalId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([tradeId])
+  @@index([tradeProposalId])
+  @@map("execution_events")
 }
 
 // AIEvent - log of AI decisions and reasoning

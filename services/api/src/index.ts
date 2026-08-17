@@ -2,16 +2,21 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import {
-  HealthStatus,
-  VersionInfo,
+  ApprovalStatus,
   Environment,
+  HealthStatus,
   MarketTimeframe,
+  RiskDecisionStatus,
+  TradeProposalStatus,
   TradingMode,
+  VersionInfo,
   buildTradingContext,
   getTradingModeConfiguration,
+  isValidRiskDecisionTransition,
+  isValidTradeProposalTransition,
   normalizeTradingMode,
-  type MarketState,
   type AIAnalysisContext,
+  type MarketState,
 } from '@forex-platform/types';
 import {
   createMarketDataProvider,
@@ -100,6 +105,7 @@ async function persistCandles(candles: CandleWrite[]) {
 }
 
 const symbolParamSchema = z.string().trim().min(1);
+const idParamSchema = z.string().trim().min(1);
 const timeframeSchema = z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d']);
 const contextTimeframeSchema = z.enum([
   '1m',
@@ -112,6 +118,21 @@ const contextTimeframeSchema = z.enum([
   '1w',
 ]);
 const limitSchema = z.coerce.number().int().min(1).max(500).default(200);
+const tradeProposalStatusSchema = z.enum([
+  TradeProposalStatus.DRAFT,
+  TradeProposalStatus.ANALYZED,
+  TradeProposalStatus.RISK_PENDING,
+  TradeProposalStatus.APPROVED,
+  TradeProposalStatus.REJECTED,
+  TradeProposalStatus.EXPIRED,
+]);
+const riskDecisionStatusSchema = z.enum([
+  RiskDecisionStatus.PENDING,
+  RiskDecisionStatus.PASS,
+  RiskDecisionStatus.FAIL,
+  RiskDecisionStatus.OVERRIDE_REQUIRED,
+  RiskDecisionStatus.BLOCKED,
+]);
 const tradingModeSchema = z.string().transform((value) => {
   const mode = normalizeTradingMode(value);
   if (!mode) {
@@ -119,6 +140,49 @@ const tradingModeSchema = z.string().transform((value) => {
   }
   return mode;
 });
+
+async function persistAIAnalysisHistory(analysis: {
+  id: string;
+  symbol: string;
+  tradingMode: string;
+  timeframe: string;
+  direction: string;
+  assessment: string;
+  confidence: number;
+  summary: string;
+  reasons: string[];
+  risks: string[];
+  invalidationConditions: string[];
+  model: string;
+  provider: string;
+  marketDataMode: 'LIVE' | 'MOCK';
+  opportunityScore: number | null;
+  analyzedAt: Date;
+}) {
+  return prisma.aiAnalysisHistory.create({
+    data: {
+      id: analysis.id,
+      symbol: analysis.symbol,
+      tradingMode: analysis.tradingMode,
+      timeframe: analysis.timeframe,
+      direction: analysis.direction,
+      assessment: analysis.assessment,
+      confidence: analysis.confidence,
+      summary: analysis.summary,
+      reasons: analysis.reasons,
+      risks: analysis.risks,
+      invalidationConditions: analysis.invalidationConditions,
+      provider: analysis.provider,
+      model: analysis.model,
+      marketDataMode: analysis.marketDataMode,
+      sourceContext: {
+        opportunityScore: analysis.opportunityScore,
+        analyzedAt: analysis.analyzedAt.toISOString(),
+      },
+      analyzedAt: analysis.analyzedAt,
+    },
+  });
+}
 
 async function checkDatabaseHealth(): Promise<{
   connected: boolean;
@@ -610,7 +674,6 @@ app.post('/api/ai/analysis', async (req: Request, res: Response) => {
     const mode = body.mode;
     const timeframe = body.timeframe as MarketTimeframe;
 
-    // Fetch market data and analyze
     let marketState: Partial<MarketState> | null = null;
     let currentPrice: number | null = null;
 
@@ -639,13 +702,11 @@ app.post('/api/ai/analysis', async (req: Request, res: Response) => {
       marketState = null;
     }
 
-    // Build opportunity from market state
     const opportunity = buildOpportunityFromMarketState(
       marketState ?? {},
       mode
     );
 
-    // Create AI analysis context
     const context: AIAnalysisContext = {
       symbol,
       tradingMode: mode,
@@ -664,8 +725,15 @@ app.post('/api/ai/analysis', async (req: Request, res: Response) => {
         marketDataService.getProviderMode() === 'LIVE' ? 'LIVE' : 'MOCK',
     };
 
-    // Analyze with AI
     const aiAnalysis = await aiAnalystService.analyze(context);
+    await persistAIAnalysisHistory({
+      ...aiAnalysis,
+      direction: String(aiAnalysis.direction),
+      assessment: String(aiAnalysis.assessment),
+      tradingMode: String(aiAnalysis.tradingMode),
+      timeframe: String(aiAnalysis.timeframe),
+      marketDataMode: aiAnalysis.marketDataMode,
+    });
 
     res.status(201).json(aiAnalysis);
   } catch (error) {
@@ -685,18 +753,22 @@ app.post('/api/ai/analysis', async (req: Request, res: Response) => {
 
 app.get('/api/ai/analysis/:id', async (req: Request, res: Response) => {
   try {
-    z.string().trim().min(1).parse(req.params.id);
-
-    // TODO: Implement retrieval from database when persistence is added
-    // For now, return a structured error
-    res.status(501).json({
-      error: {
-        code: 'NOT_IMPLEMENTED',
-        message:
-          'Analysis retrieval is not yet implemented. Run a new analysis instead.',
-      },
-      timestamp: new Date(),
+    const id = idParamSchema.parse(req.params.id);
+    const analysis = await prisma.aiAnalysisHistory.findUnique({
+      where: { id },
     });
+
+    if (!analysis) {
+      return res.status(404).json({
+        error: {
+          code: 'ANALYSIS_NOT_FOUND',
+          message: 'AI analysis history not found.',
+        },
+        timestamp: new Date(),
+      });
+    }
+
+    return res.json(analysis);
   } catch (error) {
     res.status(400).json({
       error: {
@@ -706,6 +778,316 @@ app.get('/api/ai/analysis/:id', async (req: Request, res: Response) => {
       timestamp: new Date(),
     });
   }
+});
+
+app.post('/api/trade-proposals', async (req: Request, res: Response) => {
+  try {
+    const createTradeProposalSchema = z.object({
+      symbol: z.string().trim().min(1),
+      direction: z.string().trim().min(1),
+      tradingMode: z.string().trim().min(1).default(TradingMode.SWING),
+      tradingStyle: z.string().trim().optional(),
+      aiAnalysisId: z.string().trim().min(1).optional(),
+      strategyVersionId: z.string().trim().min(1).optional(),
+      thesis: z.string().trim().optional(),
+      status: tradeProposalStatusSchema.default(TradeProposalStatus.DRAFT),
+      expiresAt: z.coerce.date().optional(),
+    });
+    const body: z.infer<typeof createTradeProposalSchema> =
+      createTradeProposalSchema.parse(req.body);
+
+    if (body.aiAnalysisId) {
+      const analysis = await prisma.aiAnalysisHistory.findUnique({
+        where: { id: body.aiAnalysisId },
+      });
+      if (!analysis) {
+        return res.status(404).json({
+          error: {
+            code: 'AI_ANALYSIS_NOT_FOUND',
+            message: 'AI analysis history not found.',
+          },
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    if (body.strategyVersionId) {
+      const strategyVersion = await prisma.strategyVersion.findUnique({
+        where: { id: body.strategyVersionId },
+      });
+      if (!strategyVersion) {
+        return res.status(404).json({
+          error: {
+            code: 'STRATEGY_VERSION_NOT_FOUND',
+            message: 'Strategy version not found.',
+          },
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    const proposal = await prisma.tradeProposal.create({
+      data: {
+        symbol: body.symbol.toUpperCase(),
+        direction: body.direction.toUpperCase(),
+        tradingMode: body.tradingMode,
+        tradingStyle: body.tradingStyle ?? body.tradingMode,
+        aiAnalysisId: body.aiAnalysisId ?? null,
+        strategyVersionId: body.strategyVersionId ?? null,
+        thesis:
+          body.thesis ?? 'Draft proposal created for M7 lifecycle tracking.',
+        status: body.status,
+        approvalStatus: ApprovalStatus.PENDING,
+        expiresAt: body.expiresAt ?? null,
+      },
+    });
+
+    await prisma.journalEvent.create({
+      data: {
+        tradeProposalId: proposal.id,
+        eventType: 'TRADE_PROPOSAL_CREATED',
+        message: 'Trade proposal created for M7 lifecycle tracking.',
+        metadata: {
+          symbol: proposal.symbol,
+          tradingMode: proposal.tradingMode,
+        },
+      },
+    });
+
+    return res.status(201).json(proposal);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(400).json({
+      error: { code: 'INVALID_PROPOSAL', message },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/trade-proposals', async (req: Request, res: Response) => {
+  const proposals = await prisma.tradeProposal.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: { riskDecisions: true, journalEvents: true },
+  });
+  res.json({ count: proposals.length, proposals });
+});
+
+app.get('/api/trade-proposals/:id', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const proposal = await prisma.tradeProposal.findUnique({
+    where: { id },
+    include: {
+      riskDecisions: true,
+      journalEvents: true,
+      orders: true,
+      trades: true,
+    },
+  });
+
+  if (!proposal) {
+    return res.status(404).json({
+      error: {
+        code: 'PROPOSAL_NOT_FOUND',
+        message: 'Trade proposal not found.',
+      },
+      timestamp: new Date(),
+    });
+  }
+
+  return res.json(proposal);
+});
+
+app.post('/api/risk/decisions', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        tradeProposalId: z.string().trim().min(1),
+        status: riskDecisionStatusSchema,
+        reason: z.string().trim().optional(),
+        evaluator: z.string().trim().default('system'),
+        riskFlags: z.record(z.any()).optional(),
+      })
+      .parse(req.body);
+
+    const proposal = await prisma.tradeProposal.findUnique({
+      where: { id: body.tradeProposalId },
+    });
+    if (!proposal) {
+      return res.status(404).json({
+        error: {
+          code: 'PROPOSAL_NOT_FOUND',
+          message: 'Trade proposal not found.',
+        },
+        timestamp: new Date(),
+      });
+    }
+
+    const currentStatus = proposal.status;
+    if (
+      !isValidTradeProposalTransition(
+        currentStatus,
+        TradeProposalStatus.RISK_PENDING
+      )
+    ) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_TRANSITION',
+          message: 'Proposal state transition is invalid.',
+        },
+        timestamp: new Date(),
+      });
+    }
+
+    if (
+      !isValidRiskDecisionTransition(RiskDecisionStatus.PENDING, body.status)
+    ) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_TRANSITION',
+          message: 'Risk decision state transition is invalid.',
+        },
+        timestamp: new Date(),
+      });
+    }
+
+    const decision = await prisma.riskDecision.create({
+      data: {
+        tradeProposalId: body.tradeProposalId,
+        status: body.status,
+        reason: body.reason ?? null,
+        riskFlags: body.riskFlags ?? null,
+        evaluator: body.evaluator,
+        evaluatedAt: new Date(),
+      },
+    });
+
+    await prisma.journalEvent.create({
+      data: {
+        tradeProposalId: body.tradeProposalId,
+        eventType: 'RISK_DECISION_CREATED',
+        message: 'Risk decision captured for proposal.',
+        metadata: { riskStatus: body.status },
+      },
+    });
+
+    return res.status(201).json(decision);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(400).json({
+      error: { code: 'INVALID_RISK_DECISION', message },
+      timestamp: new Date(),
+    });
+  }
+});
+
+app.get('/api/risk/decisions/:id', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const decision = await prisma.riskDecision.findUnique({ where: { id } });
+  if (!decision) {
+    return res.status(404).json({
+      error: {
+        code: 'RISK_DECISION_NOT_FOUND',
+        message: 'Risk decision not found.',
+      },
+      timestamp: new Date(),
+    });
+  }
+  res.json(decision);
+});
+
+app.get('/api/orders', async (req: Request, res: Response) => {
+  const orders = await prisma.order.findMany({
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ count: orders.length, orders });
+});
+
+app.get('/api/orders/:id', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const order = await prisma.order.findUnique({ where: { id } });
+  if (!order) {
+    return res.status(404).json({
+      error: { code: 'ORDER_NOT_FOUND', message: 'Order not found.' },
+      timestamp: new Date(),
+    });
+  }
+  return res.json(order);
+});
+
+app.get('/api/positions', async (req: Request, res: Response) => {
+  const positions = await prisma.position.findMany({
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ count: positions.length, positions });
+});
+
+app.get('/api/positions/:id', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const position = await prisma.position.findUnique({ where: { id } });
+  if (!position) {
+    return res.status(404).json({
+      error: { code: 'POSITION_NOT_FOUND', message: 'Position not found.' },
+      timestamp: new Date(),
+    });
+  }
+  return res.json(position);
+});
+
+app.get('/api/trades', async (req: Request, res: Response) => {
+  const trades = await prisma.trade.findMany({
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ count: trades.length, trades });
+});
+
+app.get('/api/trades/:id', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const trade = await prisma.trade.findUnique({ where: { id } });
+  if (!trade) {
+    return res.status(404).json({
+      error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found.' },
+      timestamp: new Date(),
+    });
+  }
+  return res.json(trade);
+});
+
+app.get('/api/journal/events', async (req: Request, res: Response) => {
+  const events = await prisma.journalEvent.findMany({
+    orderBy: { timestamp: 'desc' },
+  });
+  res.json({ count: events.length, events });
+});
+
+app.get('/api/journal/events/:id', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const event = await prisma.journalEvent.findUnique({ where: { id } });
+  if (!event) {
+    return res.status(404).json({
+      error: {
+        code: 'JOURNAL_EVENT_NOT_FOUND',
+        message: 'Journal event not found.',
+      },
+      timestamp: new Date(),
+    });
+  }
+  return res.json(event);
+});
+
+app.get('/api/strategies/:id/versions', async (req: Request, res: Response) => {
+  const id = idParamSchema.parse(req.params.id);
+  const strategy = await prisma.strategy.findUnique({ where: { id } });
+  if (!strategy) {
+    return res.status(404).json({
+      error: { code: 'STRATEGY_NOT_FOUND', message: 'Strategy not found.' },
+      timestamp: new Date(),
+    });
+  }
+  const versions = await prisma.strategyVersion.findMany({
+    where: { strategyId: id },
+    orderBy: { createdAt: 'desc' },
+  });
+  return res.json({ strategyId: id, count: versions.length, versions });
 });
 
 app.get('/api/ai/status', (req: Request, res: Response) => {
