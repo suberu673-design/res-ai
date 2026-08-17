@@ -1,10 +1,16 @@
 import {
+  AIAnalysisContext,
   MarketTrend,
   MomentumStrength,
   StrategyEvaluationInput,
   StrategyEvaluationResult,
   StrategySignal,
   StrategySignalDirection,
+  StrategyParameters,
+  StrategyVersion,
+  TradingMode,
+  TradingStyle,
+  type MarketState,
 } from '@forex-platform/types';
 
 export const TREND_FOLLOWING_STRATEGY_ID = 'trend-following';
@@ -13,17 +19,22 @@ export const TREND_FOLLOWING_STRATEGY_VERSION_ID = `${TREND_FOLLOWING_STRATEGY_I
 
 function getStrategyIdentity(input: StrategyEvaluationInput) {
   const strategyId =
-    input.strategyVersion?.strategyId ?? input.strategyId ?? TREND_FOLLOWING_STRATEGY_ID;
+    input.strategyVersion?.strategyId ??
+    input.strategyId ??
+    TREND_FOLLOWING_STRATEGY_ID;
 
   const explicitStrategyVersionId = input.strategyVersion?.id ?? null;
-  const versionValue = input.strategyVersion?.version ?? TREND_FOLLOWING_STRATEGY_VERSION;
+  const versionValue =
+    input.strategyVersion?.version ?? TREND_FOLLOWING_STRATEGY_VERSION;
   const majorVersion = versionValue.replace(/^v/i, '').split('.')[0] ?? '1';
   const generatedStrategyVersionId = `${strategyId}-v${majorVersion}`;
 
   return {
     strategyId,
     strategyVersionId:
-      explicitStrategyVersionId ?? generatedStrategyVersionId ?? TREND_FOLLOWING_STRATEGY_VERSION_ID,
+      explicitStrategyVersionId ??
+      generatedStrategyVersionId ??
+      TREND_FOLLOWING_STRATEGY_VERSION_ID,
     strategyVersion: versionValue,
   };
 }
@@ -107,7 +118,8 @@ function buildSignal(
 export function evaluateStrategy(
   input: StrategyEvaluationInput
 ): StrategyEvaluationResult {
-  const { strategyId, strategyVersionId, strategyVersion } = getStrategyIdentity(input);
+  const { strategyId, strategyVersionId, strategyVersion } =
+    getStrategyIdentity(input);
   const marketState = input.marketState;
 
   if (!marketState) {
@@ -214,6 +226,163 @@ export function evaluateStrategy(
     strategyVersionId,
     strategyVersion
   );
+}
+
+export interface BuildStrategyEvaluationInputInput {
+  marketState: Partial<MarketState> | null;
+  tradingMode: TradingMode;
+  tradingStyle?: TradingStyle | null;
+  strategyId?: string | null;
+  strategyVersion?: Pick<
+    StrategyVersion,
+    | 'id'
+    | 'strategyId'
+    | 'version'
+    | 'name'
+    | 'status'
+    | 'parameters'
+    | 'createdAt'
+    | 'updatedAt'
+  > | null;
+  parameters?: StrategyParameters;
+  symbol?: string;
+  timeframe?: string;
+  opportunity?: {
+    direction?: string | null;
+    score?: number | null;
+    confidence?: number | null;
+    reasons?: string[] | null;
+    riskFlags?: string[] | null;
+  } | null;
+}
+
+export function buildStrategyEvaluationInput(
+  input: BuildStrategyEvaluationInputInput
+): StrategyEvaluationInput {
+  const marketState = input.marketState ?? null;
+  const symbol = input.symbol ?? marketState?.symbol ?? 'UNKNOWN';
+  const timeframe = input.timeframe ?? marketState?.timeframe ?? '1h';
+  const parameters = input.parameters ?? {};
+
+  return {
+    symbol,
+    timeframe,
+    marketState,
+    tradingMode: input.tradingMode,
+    tradingStyle: input.tradingStyle ?? null,
+    strategyId: input.strategyId ?? input.strategyVersion?.strategyId ?? null,
+    strategyVersion: input.strategyVersion ?? null,
+    parameters,
+  };
+}
+
+export function evaluateStrategyFromMarketContext(
+  input: BuildStrategyEvaluationInputInput
+): StrategyEvaluationResult {
+  const evaluationInput = buildStrategyEvaluationInput(input);
+  const result = evaluateStrategy(evaluationInput);
+
+  if (!input.opportunity) {
+    return result;
+  }
+
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata ?? {}),
+      opportunity: {
+        direction: input.opportunity.direction ?? null,
+        score: input.opportunity.score ?? null,
+        confidence: input.opportunity.confidence ?? null,
+        reasons: input.opportunity.reasons ?? [],
+        riskFlags: input.opportunity.riskFlags ?? [],
+      },
+    },
+  };
+}
+
+export interface StrategySignalToAIAnalysisContextInput {
+  signal: StrategySignal | null;
+  symbol: string;
+  timeframe: string;
+  tradingMode: TradingMode;
+  tradingStyle?: TradingStyle | null;
+  marketState?: Partial<MarketState> | null;
+  currentPrice?: number | null;
+  marketDataSource?: string;
+  marketDataMode?: 'LIVE' | 'MOCK';
+}
+
+export function buildAIAnalysisContextFromStrategySignal(
+  input: StrategySignalToAIAnalysisContextInput
+): AIAnalysisContext {
+  const signal = input.signal;
+  const direction =
+    signal?.direction === StrategySignalDirection.LONG
+      ? 'LONG'
+      : signal?.direction === StrategySignalDirection.SHORT
+        ? 'SHORT'
+        : 'NEUTRAL';
+
+  const rationale = signal?.rationale ? [...signal.rationale] : [];
+  const strategyIdentity = signal?.strategyId
+    ? `${signal.strategyId}${signal.strategyVersionId ? `/${signal.strategyVersionId}` : ''}`
+    : 'strategy-engine';
+
+  if (!signal) {
+    return {
+      symbol: input.symbol,
+      tradingMode: input.tradingMode,
+      timeframe: input.timeframe,
+      currentPrice: input.currentPrice ?? null,
+      marketState: input.marketState ?? null,
+      opportunity: {
+        direction: 'NEUTRAL',
+        score: 0,
+        confidence: 0,
+        reasons: [
+          'Strategy produced NO_SIGNAL.',
+          `Strategy ${strategyIdentity} did not produce an actionable signal.`,
+        ],
+        riskFlags: ['No actionable signal from Strategy Engine.'],
+      },
+      marketDataSource: input.marketDataSource ?? 'strategy-engine',
+      marketDataMode: input.marketDataMode ?? 'MOCK',
+    };
+  }
+
+  const normalizedConfidence = Math.max(
+    0,
+    Math.min(100, Math.round(signal.confidence))
+  );
+
+  const reasons = [
+    ...rationale,
+    `Strategy ${strategyIdentity} produced ${signal.direction} signal.`,
+  ];
+
+  return {
+    symbol: input.symbol,
+    tradingMode: input.tradingMode,
+    timeframe: input.timeframe,
+    currentPrice: input.currentPrice ?? null,
+    marketState: input.marketState ?? null,
+    opportunity: {
+      direction,
+      score: normalizedConfidence,
+      confidence: normalizedConfidence,
+      reasons,
+      riskFlags: [
+        ...(signal.direction === StrategySignalDirection.LONG
+          ? []
+          : signal.direction === StrategySignalDirection.SHORT
+            ? []
+            : ['No actionable signal from Strategy Engine.']),
+      ],
+    },
+    marketDataSource: input.marketDataSource ?? 'strategy-engine',
+    marketDataMode: input.marketDataMode ?? 'MOCK',
+  };
 }
 
 export default evaluateStrategy;

@@ -3,13 +3,19 @@ import {
   MarketTrend,
   MomentumStrength,
   StrategyEvaluationInput,
+  StrategySignal,
   StrategySignalDirection,
   TradingMode,
   TradingStyle,
   VolatilityRegime,
   MarketStructureType,
 } from '@forex-platform/types';
-import { evaluateStrategy } from './index';
+import {
+  buildAIAnalysisContextFromStrategySignal,
+  buildStrategyEvaluationInput,
+  evaluateStrategy,
+  evaluateStrategyFromMarketContext,
+} from './index';
 
 describe('Strategy Engine skeleton and first deterministic strategy', () => {
   const neutralInput: StrategyEvaluationInput = {
@@ -319,5 +325,375 @@ describe('Strategy Engine skeleton and first deterministic strategy', () => {
     expect(result).not.toHaveProperty('tradeProposal');
     expect(result).not.toHaveProperty('riskDecision');
     expect(result.signal).not.toBeNull();
+  });
+
+  it('converts a LONG strategy signal into the correct AI/opportunity context', () => {
+    const signal: StrategySignal = {
+      id: 'signal-long-1',
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      direction: StrategySignalDirection.LONG,
+      confidence: 82,
+      rationale: ['Trend and momentum confirm bullish conditions.'],
+      strategyId: 'trend-following',
+      strategyVersionId: 'trend-following-v1',
+      evaluatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      metadata: {
+        deterministic: true,
+      },
+    };
+
+    const context = buildAIAnalysisContextFromStrategySignal({
+      signal,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      tradingStyle: TradingStyle.SWING,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.BULLISH,
+        momentum: MomentumStrength.BULLISH,
+        dataStatus: 'ok',
+      },
+      currentPrice: 1.0955,
+      marketDataSource: 'strategy-engine',
+      marketDataMode: 'MOCK',
+    });
+
+    expect(context.symbol).toBe('EURUSD');
+    expect(context.timeframe).toBe('4h');
+    expect(context.tradingMode).toBe(TradingMode.SWING);
+    expect(context.opportunity.direction).toBe('LONG');
+    expect(context.opportunity.score).toBe(82);
+    expect(context.opportunity.confidence).toBe(82);
+    expect(context.opportunity.reasons).toContain(
+      'Strategy trend-following/trend-following-v1 produced LONG signal.'
+    );
+    expect(context.marketState?.trend).toBe(MarketTrend.BULLISH);
+  });
+
+  it('converts a SHORT strategy signal into the correct AI/opportunity context', () => {
+    const signal: StrategySignal = {
+      id: 'signal-short-1',
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      direction: StrategySignalDirection.SHORT,
+      confidence: 79,
+      rationale: ['Trend and momentum confirm bearish conditions.'],
+      strategyId: 'trend-following',
+      strategyVersionId: 'trend-following-v1',
+      evaluatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      metadata: {
+        deterministic: true,
+      },
+    };
+
+    const context = buildAIAnalysisContextFromStrategySignal({
+      signal,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.BEARISH,
+        momentum: MomentumStrength.BEARISH,
+        dataStatus: 'ok',
+      },
+      marketDataSource: 'strategy-engine',
+      marketDataMode: 'MOCK',
+    });
+
+    expect(context.opportunity.direction).toBe('SHORT');
+    expect(context.opportunity.score).toBe(79);
+    expect(context.opportunity.confidence).toBe(79);
+    expect(context.opportunity.reasons).toContain(
+      'Trend and momentum confirm bearish conditions.'
+    );
+    expect(context.marketState?.trend).toBe(MarketTrend.BEARISH);
+  });
+
+  it('keeps a NO_SIGNAL result explicitly non-actionable', () => {
+    const context = buildAIAnalysisContextFromStrategySignal({
+      signal: null,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.SIDEWAYS,
+        momentum: MomentumStrength.NEUTRAL,
+        dataStatus: 'ok',
+      },
+      marketDataSource: 'strategy-engine',
+      marketDataMode: 'MOCK',
+    });
+
+    expect(context.opportunity.direction).toBe('NEUTRAL');
+    expect(context.opportunity.score).toBe(0);
+    expect(context.opportunity.confidence).toBe(0);
+    expect(context.opportunity.reasons).toContain(
+      'Strategy produced NO_SIGNAL.'
+    );
+    expect(context.opportunity.riskFlags).toContain(
+      'No actionable signal from Strategy Engine.'
+    );
+  });
+
+  it('preserves signal fields and keeps the transformation deterministic', () => {
+    const signal: StrategySignal = {
+      id: 'signal-x',
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      direction: StrategySignalDirection.LONG,
+      confidence: 88,
+      rationale: ['Trend and momentum confirm bullish conditions.'],
+      strategyId: 'trend-following',
+      strategyVersionId: 'trend-following-v1',
+      evaluatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+
+    const first = buildAIAnalysisContextFromStrategySignal({
+      signal,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      currentPrice: 1.1,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.BULLISH,
+        momentum: MomentumStrength.STRONG_BULLISH,
+        dataStatus: 'ok',
+      },
+      marketDataSource: 'strategy-engine',
+      marketDataMode: 'MOCK',
+    });
+
+    const second = buildAIAnalysisContextFromStrategySignal({
+      signal,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      currentPrice: 1.1,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.BULLISH,
+        momentum: MomentumStrength.STRONG_BULLISH,
+        dataStatus: 'ok',
+      },
+      marketDataSource: 'strategy-engine',
+      marketDataMode: 'MOCK',
+    });
+
+    expect(first).toEqual(second);
+    expect(first.opportunity.confidence).toBe(88);
+    expect(first.opportunity.reasons).toContain(
+      'Strategy trend-following/trend-following-v1 produced LONG signal.'
+    );
+  });
+
+  it('does not mutate input objects and does not create downstream lifecycle objects', () => {
+    const signal: StrategySignal = {
+      id: 'signal-y',
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      direction: StrategySignalDirection.LONG,
+      confidence: 70,
+      rationale: ['Trend and momentum confirm bullish conditions.'],
+      strategyId: 'trend-following',
+      strategyVersionId: 'trend-following-v1',
+      evaluatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+
+    const original = JSON.stringify({
+      signal,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.BULLISH,
+        momentum: MomentumStrength.BULLISH,
+        dataStatus: 'ok',
+      },
+    });
+
+    const context = buildAIAnalysisContextFromStrategySignal({
+      signal,
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      tradingMode: TradingMode.SWING,
+      marketState: {
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        trend: MarketTrend.BULLISH,
+        momentum: MomentumStrength.BULLISH,
+        dataStatus: 'ok',
+      },
+      marketDataSource: 'strategy-engine',
+      marketDataMode: 'MOCK',
+    });
+
+    expect(
+      JSON.stringify({
+        signal,
+        symbol: 'EURUSD',
+        timeframe: '4h',
+        tradingMode: TradingMode.SWING,
+        marketState: {
+          symbol: 'EURUSD',
+          timeframe: '4h',
+          trend: MarketTrend.BULLISH,
+          momentum: MomentumStrength.BULLISH,
+          dataStatus: 'ok',
+        },
+      })
+    ).toBe(original);
+    expect(context).not.toHaveProperty('tradeProposal');
+    expect(context).not.toHaveProperty('riskDecision');
+    expect(context).not.toHaveProperty('order');
+    expect(context).not.toHaveProperty('trade');
+  });
+
+  it('builds a StrategyEvaluationInput from upstream market context without mutating it', () => {
+    const marketState: Partial<StrategyEvaluationInput['marketState']> = {
+      symbol: 'EURUSD',
+      timeframe: '1h',
+      timestamp: new Date('2026-01-01T00:00:00.000Z'),
+      trend: MarketTrend.BULLISH,
+      momentum: MomentumStrength.BULLISH,
+      volatility: VolatilityRegime.NORMAL,
+      marketStructure: MarketStructureType.HIGHER_HIGHS,
+      supportLevels: [],
+      resistanceLevels: [],
+      indicators: {
+        rsi: 60,
+        ema20: 1.08,
+        ema50: 1.06,
+        ema100: 1.05,
+        ema200: 1.02,
+        macd: 0.001,
+        signal: 0.0008,
+        histogram: 0.0002,
+        atr: 0.001,
+        adx: 25,
+        roc: 0.5,
+        bollingerBands: null,
+        valid: true,
+        dataStatus: 'ok',
+        source: 'mock',
+      },
+      source: 'mock',
+      dataStatus: 'ok',
+    };
+
+    const before = JSON.stringify(marketState);
+    const input = buildStrategyEvaluationInput({
+      marketState,
+      tradingMode: TradingMode.SWING,
+      tradingStyle: TradingStyle.SWING,
+      strategyId: 'trend-following',
+      parameters: { minConfidence: 60 },
+      strategyVersion: {
+        id: 'trend-following-v1',
+        strategyId: 'trend-following',
+        version: 'v1.0.0',
+        name: 'Trend Following v1',
+        status: 'ACTIVE',
+        parameters: { minConfidence: 60 },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      opportunity: {
+        direction: 'LONG',
+        score: 80,
+        confidence: 80,
+        reasons: ['Opportunity is constructive.'],
+        riskFlags: [],
+      },
+    });
+
+    expect(JSON.stringify(marketState)).toBe(before);
+    expect(input.marketState).toBeDefined();
+    expect(input.tradingMode).toBe(TradingMode.SWING);
+    expect(input.tradingStyle).toBe(TradingStyle.SWING);
+    expect(input.strategyVersion?.id).toBe('trend-following-v1');
+    expect(input.parameters).toEqual({ minConfidence: 60 });
+  });
+
+  it('evaluates upstream market context through the pipeline without creating downstream lifecycle objects', () => {
+    const marketState = {
+      symbol: 'EURUSD',
+      timeframe: '4h',
+      timestamp: new Date('2026-01-01T00:00:00.000Z'),
+      trend: MarketTrend.BULLISH,
+      momentum: MomentumStrength.STRONG_BULLISH,
+      volatility: VolatilityRegime.NORMAL,
+      marketStructure: MarketStructureType.BREAKOUT,
+      supportLevels: [],
+      resistanceLevels: [],
+      indicators: {
+        rsi: 68,
+        ema20: 1.08,
+        ema50: 1.06,
+        ema100: 1.05,
+        ema200: 1.02,
+        macd: 0.001,
+        signal: 0.0008,
+        histogram: 0.0002,
+        atr: 0.001,
+        adx: 25,
+        roc: 0.5,
+        bollingerBands: null,
+        valid: true,
+        dataStatus: 'ok',
+        source: 'mock',
+      },
+      source: 'mock',
+      dataStatus: 'ok',
+    } satisfies StrategyEvaluationInput['marketState'];
+
+    const result = evaluateStrategyFromMarketContext({
+      marketState,
+      tradingMode: TradingMode.SWING,
+      tradingStyle: TradingStyle.SWING,
+      strategyId: 'trend-following',
+      parameters: { minConfidence: 60 },
+      strategyVersion: {
+        id: 'trend-following-v1',
+        strategyId: 'trend-following',
+        version: 'v1.0.0',
+        name: 'Trend Following v1',
+        status: 'ACTIVE',
+        parameters: { minConfidence: 60 },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      opportunity: {
+        direction: 'LONG',
+        score: 90,
+        confidence: 90,
+        reasons: ['Trend and momentum confirm bullish conditions.'],
+        riskFlags: [],
+      },
+    });
+
+    expect(result.producedSignal).toBe(true);
+    expect(result.signal?.direction).toBe(StrategySignalDirection.LONG);
+    expect(result.metadata?.opportunity).toMatchObject({
+      direction: 'LONG',
+      score: 90,
+      confidence: 90,
+    });
+    expect(result).not.toHaveProperty('tradeProposal');
+    expect(result).not.toHaveProperty('riskDecision');
+    expect(result).not.toHaveProperty('order');
+    expect(result).not.toHaveProperty('position');
+    expect(result).not.toHaveProperty('trade');
   });
 });
